@@ -479,31 +479,62 @@ export function suggestReviewNodes(
   return reviewPoints;
 }
 
-// ─── 5. 工期合理性评估 ─────────────────────────────────────────────────
+// ─── 5. 工期合理性评估（v3：含 BRAC 对齐）────────────────────────────
 
 /**
  * 评估单个子任务的工期是否合理。
  *
- * 根据认知负荷理论（Sweller, 1988）和深度工作研究（Newport, 2016）：
- * - 单个学习子任务最适合 1-3 天（每天 1-2 小时深度学习）
- * - 超过 7 天的子任务应拆分（工作记忆无法在长时间内维持激活状态）
- * - 低于 1 天可能过于碎片化，不利于深度理解
+ * v3 [方向A] 新增 estimatedHours 参数：
+ * 将预计学习时长映射到推荐天数（BRAC 90 分钟块对齐）：
  *
- * @returns { ok, suggestion } ok=true 表示合理
+ *   ≤ 1.5h  →  1 块 → 推荐 1 天
+ *   1.5-3h  →  2 块 → 推荐 1-2 天
+ *   3-4.5h  →  3 块 → 推荐 2-3 天（每日认知上限）
+ *   > 4.5h  →  超出每日上限，建议拆分
+ *
+ * 依据：Kleitman/Lavie BRAC 研究 + Ericsson 每日深度工作上限研究。
+ *
+ * @param durationDays    计划工期（天）
+ * @param bloomLevel      Bloom 层级（高层级允许更长工期）
+ * @param estimatedHours  预计每日学习时长（小时），可选
  */
 export function assessTaskDuration(
   durationDays: number,
   bloomLevel: BloomLevel = 3,
-): { ok: boolean; suggestion?: string } {
-  // 高层级 Bloom 任务（分析/评估/创造）需要更多时间
-  const maxRecommended = bloomLevel >= 4 ? 7 : 5;
-  const minRecommended = 1;
+  estimatedHours?: number,
+): { ok: boolean; suggestion?: string; recommendedDays?: number } {
 
-  if (durationDays < minRecommended) {
-    return {
-      ok: false,
-      suggestion: `工期 ${durationDays} 天可能太短，建议至少 1 天确保深度理解`,
-    };
+  // [方向A] BRAC 块对齐优先判断
+  if (estimatedHours !== undefined && estimatedHours > 0) {
+    const BRAC_BLOCK_HOURS = 1.5;
+    const MAX_DAILY_HOURS = 4.5; // Ericsson：3 个 BRAC 块是每日深度工作上限
+
+    if (estimatedHours > MAX_DAILY_HOURS) {
+      const recommendedDays = Math.ceil(estimatedHours / MAX_DAILY_HOURS);
+      return {
+        ok: false,
+        suggestion: `预计 ${estimatedHours}h 超过每日认知上限（4.5h / 3个BRAC块），建议拆分为 ${recommendedDays} 天`,
+        recommendedDays,
+      };
+    }
+
+    const bracBlocks = Math.ceil(estimatedHours / BRAC_BLOCK_HOURS);
+    const recommendedDays = bracBlocks <= 1 ? 1 : bracBlocks <= 2 ? 2 : 3;
+
+    if (durationDays < recommendedDays) {
+      return {
+        ok: false,
+        suggestion: `${estimatedHours}h 的内容建议至少 ${recommendedDays} 天（对应 ${bracBlocks} 个 BRAC 90分钟块）`,
+        recommendedDays,
+      };
+    }
+    return { ok: true, recommendedDays };
+  }
+
+  // 无 estimatedHours 时沿用 Bloom-based 检查
+  const maxRecommended = bloomLevel >= 4 ? 7 : 5;
+  if (durationDays < 1) {
+    return { ok: false, suggestion: `工期 ${durationDays} 天过短，建议至少 1 天` };
   }
   if (durationDays > maxRecommended) {
     return {
