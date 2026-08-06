@@ -62,64 +62,64 @@ const INTENT_PROMPT = `你是一名专业学习规划顾问，擅长应用教育
 - estimated_total_hours：完成该目标预计需要的总小时数（15-200小时范围）
 - search_keywords：3-5个最能代表该主题的中英文搜索词`;
 
-// ─── Stage 2: Resource Search ────────────────────────────────────────
-// 升级点：区分资源适合的先备知识层级和学习阶段（input/practice/reference）
-const RESOURCE_PROMPT = `你是一名资深学习顾问，擅长为不同基础的学习者匹配最合适的学习资源。
+// ─── Stage 2: Resource Search Intent（P0 改造）──────────────────────────
+//
+// 设计原则（来自 Perplexity Pipeline 研究 + arXiv 引用验证研究）：
+//
+//   ⚠️ 旧方案（已废弃）：让 AI 直接生成带 URL 的资源列表
+//      问题：LLM 幻觉率 15-25%，编造的 URL 看起来可信但实际 404
+//
+//   ✅ 新方案（两阶段分离）：
+//      Step A — AI 只生成搜索意图（关键词 + 用途），禁止生成任何 URL
+//      Step B — 代码调用 Tavily API，从白名单域名里检索真实资源
+//      Step C — 把真实 URL 注入后续 Prompt，LLM 只能引用代码拿到的资源
+//
+//   核心规则：
+//   "Because steps B and C are CODE, they always run."
+//   URL 的真实性由代码保证，不受 LLM 随机性影响。
+//
+// 无 Tavily Key 时的降级：
+//   返回 trust_level="search_only" 资源，用户点击时跳转搜索引擎
+const RESOURCE_INTENT_PROMPT = `你是一名资深学习顾问，擅长为不同基础的学习者设计搜索策略。
 
 学习目标：{GOAL}
 主题领域：{DOMAIN}
 学习者基础：{PRIOR_LEVEL}
-搜索关键词：{KEYWORDS}
+参考关键词：{KEYWORDS}
 
-请以 JSON 格式回复，推荐 5-8 个资源（不要加 markdown 代码块）：
+【重要规则】你的任务是生成"搜索意图"列表，而不是资源列表。
+不要生成任何 URL、链接或网址。只生成搜索词和用途说明。
+资源的真实 URL 将由系统代码自动检索，不需要你提供。
+
+请以 JSON 格式回复 5-8 个搜索意图（不要加 markdown 代码块）：
 
 {
-  "resources": [
+  "search_intents": [
     {
-      "type": "course",
-      "title": "课程名称",
-      "platform": "Coursera/edX/B站/慕课网/网易公开课等",
-      "author": "讲师名",
-      "searchQuery": "搜索此课程的关键词",
+      "query": "可以直接放入搜索引擎的搜索词（中英文均可，尽量精准）",
+      "purpose": "这个搜索的目的（10字以内，如：Python入门教程/数学基础练习）",
+      "learning_phase": "input",
       "suitable_for": "beginner",
-      "learning_phase": "input"
-    },
-    {
-      "type": "link",
-      "title": "资源标题",
-      "url": "https://真实链接（确认存在才给，否则省略）",
-      "platform": "平台名",
-      "suitable_for": "intermediate",
-      "learning_phase": "reference"
-    },
-    {
-      "type": "search",
-      "title": "搜索推荐：具体描述",
-      "searchQuery": "可直接复制到搜索引擎的精准搜索词",
-      "suitable_for": "beginner",
-      "learning_phase": "practice"
-    },
-    {
-      "type": "person",
-      "title": "推荐关注的学习博主/老师",
-      "author": "具体人名",
-      "platform": "B站/YouTube/公众号等",
-      "searchQuery": "在该平台搜索此人的关键词",
-      "suitable_for": "all",
-      "learning_phase": "input"
+      "resource_type": "course"
     }
   ]
 }
 
 字段说明：
+- query：精准搜索词，尽量包含具体内容名称（如课程名、技术名、书名）
+  * 编程类：优先搜索官方文档、教程网站（如 "python tutorial site:docs.python.org"）
+  * 视频类：加上 "tutorial beginner" 或 "讲解 入门"
+  * 练习类：加上 "exercises practice problems"
+- purpose：简短说明这个资源的作用，供学习者理解
+- learning_phase：input（学新知识）/ practice（练习巩固）/ reference（查阅参考）
 - suitable_for：beginner / intermediate / advanced / all
-- learning_phase：input（学习新知识）/ practice（练习巩固）/ reference（查阅参考）
+- resource_type：course（课程/视频）/ doc（文档）/ video（视频）/ exercise（练习）/ reference（参考书）
 
-资源推荐原则：
-- 优先推荐中文资源，适当补充英文权威资源
-- 只给确认存在的链接，否则给searchQuery，绝对不编造URL
-- 根据学习者基础（{PRIOR_LEVEL}）优先推荐适合其水平的资源
-- 至少覆盖 input + practice 两个阶段`;
+搜索策略原则：
+- 优先中文资源，补充英文权威来源
+- beginner 阶段多搜 "入门" "tutorial" "基础"
+- 确保覆盖 input（2-3个）和 practice（2-3个），可选 reference（1-2个）
+- 不同搜索词应有差异，避免重复检索到同一资源`;
 
 // ─── Stage 3: Task Planning ───────────────────────────────────────────
 // 理论依据：
