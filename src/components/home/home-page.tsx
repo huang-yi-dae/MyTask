@@ -11,7 +11,8 @@ import {
 import type { SubtaskWithTask } from "@/lib/api/tasks";
 import { RightPanel, useAnalysisPanel } from "./right-panel";
 import { NewTaskInput } from "./new-task-input";
-import { SubtaskRow, getSubtaskActualDates } from "./subtask-row";
+import { getSubtaskActualDates } from "./subtask-row";
+import { TimelineCard, TimelineSectionHeader } from "./timeline-card";
 import { SubtaskDetailModal } from "./subtask-detail-modal";
 import { CongratulationsModal, type CongratsData } from "./congrats-modal";
 
@@ -30,7 +31,16 @@ const T = {
   error:   "#C0392B",
 } as const;
 
-type TimeFilter = "today" | "tomorrow" | "week" | "all";
+type TimeFilter = "today" | "tomorrow" | "week" | "later" | "all";
+
+// ─── 时间轴分组类型 ────────────────────────────────────────────────────
+interface TimelineSection {
+  key: TimeFilter;
+  label: string;
+  sublabel: string;
+  accentColor: string;
+  rows: SubtaskWithTask[];
+}
 
 // ─── Main Dashboard ───────────────────────────────────────────────────
 
@@ -41,7 +51,6 @@ export function HomePage() {
 
   const [subtaskRows, setSubtaskRows] = useState<SubtaskWithTask[]>([]);
   const [fetching, setFetching] = useState(false);
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [showInput, setShowInput] = useState(false);
   const [detailSubtask, setDetailSubtask] = useState<SubtaskWithTask | null>(null);
   const [congrats, setCongrats] = useState<CongratsData | null>(null);
@@ -104,28 +113,22 @@ export function HomePage() {
   }, []);
 
   const handleJumpToSubtask = useCallback((
-    subtaskId: string, taskStartDate: string | null, startDay: number, durationDays: number,
+    subtaskId: string, _taskStartDate: string | null, _startDay: number, _durationDays: number,
   ) => {
-    if (!taskStartDate) return;
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today.getTime() + 86400000);
-    const base = new Date(taskStartDate);
-    if (isNaN(base.getTime())) return;
-    const baseDay = new Date(base.getFullYear(), base.getMonth(), base.getDate());
-    const s = new Date(baseDay); s.setDate(baseDay.getDate() + startDay);
-    const e = new Date(baseDay); e.setDate(baseDay.getDate() + startDay + durationDays - 1);
-    let target: TimeFilter = "all";
-    if (s <= today && today <= e) target = "today";
-    else if (s <= tomorrow && tomorrow <= e) target = "tomorrow";
-    else { const we = new Date(today.getTime() + 7 * 86400000); if (s <= we && e >= today) target = "week"; }
-    setTimeFilter(target);
+    // 时间轴视图：只需高亮对应卡片，页面已经按日期分组展示
     setHighlightedSubtaskId(subtaskId);
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightedSubtaskId(null), 3000);
+    // 尝试滚动到高亮卡片
+    setTimeout(() => {
+      const el = document.getElementById(`subtask-card-${subtaskId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
   }, []);
 
-  const filteredRows = sortSubtasks(filterSubtasksByTime(subtaskRows, timeFilter));
+  // 时间轴分组
+  const sections = buildTimelineSections(subtaskRows);
+  const totalPending = subtaskRows.filter(r => !r.completed).length;
   const todayStr = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 
   return (
@@ -146,32 +149,55 @@ export function HomePage() {
       </header>
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* ── 左侧：时间轴视图 ── */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", borderRight: `1px solid ${T.line}`, overflow: "hidden" }}>
-          <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 8, background: T.surface, flexShrink: 0 }}>
-            <TimeFilterTabs value={timeFilter} onChange={setTimeFilter} />
+          {/* 工具栏 */}
+          <div style={{ padding: "10px 18px", borderBottom: `1px solid ${T.line}`, display: "flex", alignItems: "center", background: T.surface, flexShrink: 0, gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: T.ink, letterSpacing: "-0.01em" }}>学习日历</span>
             <div style={{ flex: 1 }} />
-            <span style={{ color: T.muted, fontSize: 12, fontFamily: "var(--font-geist-mono), monospace" }}>共 {filteredRows.length} 项</span>
+            {totalPending > 0 && (
+              <span style={{ fontSize: 11, color: T.muted }}>待完成 {totalPending} 项</span>
+            )}
           </div>
-          <div style={{ flex: 1, overflowY: "auto" }}>
+
+          {/* 内容区 */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
             {authLoading || fetching ? (
-              <div style={{ color: T.muted, fontSize: 13, padding: "40px 24px", textAlign: "center" }}>加载中…</div>
+              <div style={{ color: T.muted, fontSize: 13, padding: "40px 10px", textAlign: "center" }}>加载中…</div>
             ) : !user ? (
-              <div style={{ color: T.muted, fontSize: 13, padding: "60px 24px", textAlign: "center" }}>
+              <div style={{ color: T.muted, fontSize: 13, padding: "60px 10px", textAlign: "center" }}>
                 <div style={{ marginBottom: 12 }}>登录后可查看和管理任务</div>
                 <button onClick={() => auth.login().catch(() => {})} style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 13, cursor: "pointer" }}>登录</button>
               </div>
-            ) : filteredRows.length === 0 ? (
-              <div style={{ color: T.muted, fontSize: 13, padding: "60px 24px", textAlign: "center" }}>当前筛选下暂无任务，点击右上角新建。</div>
+            ) : sections.every(s => s.rows.length === 0) ? (
+              <div style={{ color: T.muted, fontSize: 13, padding: "60px 10px", textAlign: "center" }}>
+                暂无任务，点击右上角「新建任务」开始。
+              </div>
             ) : (
-              filteredRows.map((row) => (
-                <SubtaskRow key={row.id} row={row}
-                  isSelected={focusedId === row.taskId}
-                  isHighlighted={highlightedSubtaskId === row.id}
-                  onOpen={() => setDetailSubtask(row)}
-                  onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
-                  onDeleteTask={handleDeleteTask}
-                  onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
-                />
+              sections.filter(s => s.rows.length > 0).map((section) => (
+                <div key={section.key} style={{ marginBottom: 28 }}>
+                  <TimelineSectionHeader
+                    label={section.label}
+                    sublabel={section.sublabel}
+                    accentColor={section.accentColor}
+                    pendingCount={section.rows.filter(r => !r.completed).length}
+                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                    {section.rows.map((row) => (
+                      <div key={row.id} id={`subtask-card-${row.id}`}>
+                        <TimelineCard
+                          row={row}
+                          isSelected={focusedId === row.taskId}
+                          isHighlighted={highlightedSubtaskId === row.id}
+                          onOpen={() => setDetailSubtask(row)}
+                          onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
+                          onDeleteTask={handleDeleteTask}
+                          onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ))
             )}
           </div>
@@ -193,69 +219,81 @@ export function HomePage() {
   );
 }
 
-// ─── Time Filter Tabs ─────────────────────────────────────────────────
-
-function TimeFilterTabs({ value, onChange }: { value: TimeFilter; onChange: (v: TimeFilter) => void }) {
-  const tabs: { key: TimeFilter; label: string }[] = [
-    { key: "today", label: "今天" },
-    { key: "tomorrow", label: "明天" },
-    { key: "week", label: "未来 7 天" },
-    { key: "all", label: "全部" },
-  ];
-  return (
-    <div style={{ display: "flex", gap: 2, background: T.soft, borderRadius: 8, padding: 3 }}>
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          onClick={() => onChange(t.key)}
-          style={{
-            padding: "5px 12px", borderRadius: 6, border: "none", fontSize: 13, cursor: "pointer",
-            background: value === t.key ? T.surface : "transparent",
-            color: value === t.key ? T.ink : T.muted,
-            fontWeight: value === t.key ? 600 : 400,
-            boxShadow: value === t.key ? "0 1px 4px rgba(17,17,17,0.07)" : "none",
-            transition: "all 0.15s", letterSpacing: "-0.01em",
-          }}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────
-
-function sortSubtasks(rows: SubtaskWithTask[]): SubtaskWithTask[] {
-  return [...rows].sort((a, b) => {
-    if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    return a.sortOrder - b.sortOrder;
-  });
-}
-
-function filterSubtasksByTime(rows: SubtaskWithTask[], filter: TimeFilter): SubtaskWithTask[] {
-  if (filter === "all") return rows;
-  const now = new Date();
+// ─── 时间轴分段构建 ───────────────────────────────────────────────────
+/**
+ * 将所有子任务按时间段分为 4 组：
+ *   今天 / 明天 / 本周（后 7 天）/ 更早 or 更晚
+ * 每组内：未完成在前（按 sortOrder），已完成在后
+ */
+function buildTimelineSections(rows: SubtaskWithTask[]): TimelineSection[] {
+  const now   = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today.getTime() + 86400000);
-  const weekEnd = new Date(today.getTime() + 7 * 86400000);
-  return rows.filter((r) => {
+  const weekEnd  = new Date(today.getTime() + 7 * 86400000);
+
+  const fmtDate = (d: Date) => d.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });
+  const fmtRange = (s: Date, e: Date) =>
+    `${s.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} — ${e.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}`;
+
+  const buckets: Record<string, SubtaskWithTask[]> = {
+    today: [], tomorrow: [], week: [], later: [],
+  };
+
+  for (const r of rows) {
     const dates = getSubtaskActualDates(r);
     if (!dates) {
-      const d = new Date(r.taskCreatedAt);
-      const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      if (filter === "today")    return day.getTime() === today.getTime();
-      if (filter === "tomorrow") return day.getTime() === tomorrow.getTime();
-      if (filter === "week")     return day >= today && day <= weekEnd;
-      return true;
+      // 没有排期 → 放到今天
+      buckets.today.push(r);
+      continue;
     }
     const { start, end } = dates;
-    if (filter === "today")    return start <= today    && today    <= end;
-    if (filter === "tomorrow") return start <= tomorrow && tomorrow <= end;
-    if (filter === "week")     return start <= weekEnd  && end      >= today;
-    return true;
-  });
-}
+    if (start <= today && today <= end) {
+      buckets.today.push(r);
+    } else if (start <= tomorrow && tomorrow <= end) {
+      buckets.tomorrow.push(r);
+    } else if (start <= weekEnd && end >= today) {
+      buckets.week.push(r);
+    } else {
+      buckets.later.push(r);
+    }
+  }
 
+  const sort = (arr: SubtaskWithTask[]) =>
+    [...arr].sort((a, b) => {
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      return a.sortOrder - b.sortOrder;
+    });
+
+  return [
+    {
+      key: "today",
+      label: "今天",
+      sublabel: fmtDate(today),
+      accentColor: "#3B7AFF",
+      rows: sort(buckets.today),
+    },
+    {
+      key: "tomorrow",
+      label: "明天",
+      sublabel: fmtDate(tomorrow),
+      accentColor: "#E07B2A",
+      rows: sort(buckets.tomorrow),
+    },
+    {
+      key: "week",
+      label: "本周",
+      sublabel: fmtRange(new Date(today.getTime() + 2 * 86400000), weekEnd),
+      accentColor: "#2F5D50",
+      rows: sort(buckets.week),
+    },
+    {
+      key: "later",
+      label: "更晚",
+      sublabel: "7 天之后",
+      accentColor: "#94a3b8",
+      rows: sort(buckets.later),
+    },
+  ];
+}
 
 
