@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { appAi } from "@/lib/eazo-ai-billing";
+import { resolveResources, type SearchIntent, type TrustableResource } from "@/lib/tavily";
 import {
   getTaskById,
   createSubtasks,
