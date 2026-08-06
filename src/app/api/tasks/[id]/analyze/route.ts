@@ -492,12 +492,12 @@ export async function POST(
           const earliestDate = new Date(newStartDate);
           earliestDate.setDate(newStartDate.getDate() + cumulativeDay);
 
-          const actualDate = findNextAvailableDay(earliestDate, topicCategory, dailySlots);
+          const actualDate = findNextAvailableDay(earliestDate, topicCategory, dailySlots, s.bloom_level ?? 2);
           const actualStartDay = Math.round(
             (actualDate.getTime() - newStartDate.getTime()) / 86400000
           );
 
-          registerDailySlot(actualDate.toISOString().slice(0, 10), topicCategory, dailySlots);
+          registerDailySlot(actualDate.toISOString().slice(0, 10), topicCategory, dailySlots, s.bloom_level ?? 2);
           cumulativeDay = actualStartDay + s.duration_days;
 
           const subtaskResources: Resource[] = (s.resource_indices ?? [])
