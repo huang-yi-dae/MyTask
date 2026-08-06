@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { appAi } from "@/lib/eazo-ai-billing";
 import { resolveResources, type SearchIntent, type TrustableResource } from "@/lib/tavily";
+import { extractUrl, fetchUrlContent, formatContentForPrompt } from "@/lib/url-fetcher";
 import {
   getTaskById,
   createSubtasks,
@@ -314,12 +315,38 @@ export async function POST(
       };
 
       try {
+        // ── Stage 0: URL 内容抓取（如果输入包含 URL）───────────────
+        // 用户输入 GitHub 仓库、文章、文档链接时，先抓取真实内容
+        // 再将内容注入 Stage 1 的 INTENT_PROMPT，让 AI 基于实际页面规划
+        let urlContext = "";
+        const detectedUrl = extractUrl(rawGoal);
+        if (detectedUrl) {
+          send("phase", { step: "intent", label: "// 阶段 0 · 检测到链接，正在读取页面内容…" });
+          try {
+            const fetched = await fetchUrlContent(detectedUrl);
+            if (fetched) {
+              urlContext = formatContentForPrompt(fetched);
+              send("url_fetched", {
+                url: detectedUrl,
+                urlType: fetched.urlType,
+                title: fetched.title,
+                tags: fetched.tags,
+              });
+            }
+          } catch { /* 抓取失败静默降级，不阻断主流程 */ }
+        }
+
         // ── Stage 1: Intent ───────────────────────────────────────────
         send("phase", { step: "intent", label: "// 阶段 1/4 · 评估先备知识与学习目标层级…" });
 
+        // 如果有 URL 内容，把它作为上下文附加到用户输入后面
+        const enrichedGoal = urlContext
+          ? `${rawGoal}\n\n${urlContext}`
+          : rawGoal;
+
         const intentRaw = await callAI(
           INTENT_PROMPT,
-          rawGoal + (adjustment ? `\n调整要求：${adjustment}` : ""),
+          enrichedGoal + (adjustment ? `\n调整要求：${adjustment}` : ""),
           (d) => send("delta", { stage: "intent", content: d })
         );
 
@@ -356,7 +383,7 @@ export async function POST(
         const intentRawStr = await callAI(
           "你是资深学习资源顾问，请以 JSON 格式精确回复，不要加 markdown 代码块。严禁生成任何 URL。",
           RESOURCE_INTENT_PROMPT
-            .replace("{GOAL}", rawGoal)
+            .replace("{GOAL}", enrichedGoal.slice(0, 800)) // 使用带 URL 内容的完整目标
             .replace("{DOMAIN}", domain)
             .replace(/{PRIOR_LEVEL}/g, priorLevel)
             .replace("{KEYWORDS}", keywords),
@@ -384,7 +411,7 @@ export async function POST(
         const planRaw = await callAI(
           "你是学习计划设计专家，精通Bloom认知分类法和认知负荷理论，请以 JSON 格式精确回复，不要加 markdown 代码块。",
           PLAN_PROMPT
-            .replace("{GOAL}", rawGoal)
+            .replace("{GOAL}", enrichedGoal.slice(0, 1200))
             .replace("{TASK_NAME}", taskName)
             .replace("{DOMAIN}", domain)
             .replace(/{PRIOR_LEVEL}/g, priorLevel)
