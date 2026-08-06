@@ -300,51 +300,125 @@ export function canScheduleTopic(
 }
 
 /**
- * 向 DailySlot 注册一个子任务占位
+ * [方向A] 检查某天是否还可以安排高难度任务（Bloom ≥ HIGH_BLOOM_THRESHOLD）。
+ *
+ * 依据：Csikszentmihalyi Flow Theory + BRAC 90 分钟周期研究。
+ * 每天认知峰值资源有限，最多支撑 1 个深度思考任务；
+ * 超过这个数量进入焦虑区而非心流区，引发认知疲劳甚至放弃。
+ * 剩余槽位分配给低难度内容（复习/理解），形成难度波浪。
+ */
+export function canScheduleHighBloom(
+  dateStr: string,
+  bloomLevel: number,
+  slots: Map<string, DailySlot>,
+): boolean {
+  if (bloomLevel < HIGH_BLOOM_THRESHOLD) return true;
+  const slot = slots.get(dateStr);
+  if (!slot) return true;
+  return slot.highBloomCount < MAX_HIGH_BLOOM_PER_DAY;
+}
+
+/**
+ * [方向B] 检查某天安排当前领域是否满足亲和度阈值（软约束）。
+ *
+ * 依据：Rubinstein et al., 2001——使用不同神经回路的任务切换代价
+ * 极高，DOMAIN_AFFINITY_MATRIX 量化了各领域间的回路相似度。
+ * 亲和度过低时返回 false，触发软惩罚（推迟 1 天，非硬拒绝）。
+ */
+export function isDomainCompatible(
+  dateStr: string,
+  topicCategory: string,
+  slots: Map<string, DailySlot>,
+): boolean {
+  const slot = slots.get(dateStr);
+  if (!slot || slot.scheduledTopics.length === 0) return true;
+  const affinity = computeDayAffinityScore(topicCategory, slot.scheduledTopics);
+  return affinity >= DOMAIN_AFFINITY_THRESHOLD;
+}
+
+/**
+ * 向 DailySlot 注册一个子任务占位。
+ * v3：同时更新 highBloomCount [方向A] 和 scheduledTopics [方向B]。
  */
 export function registerDailySlot(
   dateStr: string,
   topicCategory: string,
   slots: Map<string, DailySlot>,
+  bloomLevel = 0,
 ): void {
   if (!slots.has(dateStr)) {
-    slots.set(dateStr, { date: dateStr, subtaskCount: 0, topicCounts: new Map() });
+    slots.set(dateStr, {
+      date: dateStr,
+      subtaskCount: 0,
+      topicCounts: new Map(),
+      highBloomCount: 0,
+      scheduledTopics: [],
+    });
   }
   const slot = slots.get(dateStr)!;
   slot.subtaskCount += 1;
-  slot.topicCounts.set(
-    topicCategory,
-    (slot.topicCounts.get(topicCategory) ?? 0) + 1
-  );
+  slot.topicCounts.set(topicCategory, (slot.topicCounts.get(topicCategory) ?? 0) + 1);
+  if (bloomLevel >= HIGH_BLOOM_THRESHOLD) slot.highBloomCount += 1; // [方向A]
+  slot.scheduledTopics.push(topicCategory);                         // [方向B]
 }
 
 /**
- * 为一个子任务寻找满足容量 + 主题约束的最早可用日期。
+ * 为一个子任务寻找满足全部约束的最早可用日期。
  *
- * @param earliestStart  最早可以开始的日期（大任务 startDate）
+ * 约束层级（优先级从高到低）：
+ *   硬约束 1: subtaskCount < MAX_SUBTASKS_PER_DAY
+ *   硬约束 2: 同主题 ≤ MAX_SAME_TOPIC_PER_DAY
+ *   硬约束 3: [方向A] 高难度任务 ≤ MAX_HIGH_BLOOM_PER_DAY
+ *   软约束 4: [方向B] 领域亲和度 ≥ DOMAIN_AFFINITY_THRESHOLD
+ *             （软约束最多推 DOMAIN_PENALTY_MAX_SKIP 天后放弃）
+ *
+ * 两轮搜索：
+ *   第 1 轮（≤ DOMAIN_PENALTY_MAX_SKIP+1 天）：硬约束 + 软约束
+ *   第 2 轮（≤ maxSearchDays 天）：仅硬约束（保证总能找到结果）
+ *
+ * @param earliestStart  最早可以开始的日期
  * @param topicCategory  子任务主题
  * @param slots          当前每日槽位状态
+ * @param bloomLevel     子任务 Bloom 层级（默认 2）
  * @param maxSearchDays  最大搜索天数（防止死循环）
  */
 export function findNextAvailableDay(
   earliestStart: Date,
   topicCategory: string,
   slots: Map<string, DailySlot>,
+  bloomLevel = 2,
   maxSearchDays = 60,
 ): Date {
+  // ── 第一轮：硬约束 + 软约束（领域亲和度）──────────────────────────
   let candidate = earliestStart;
-  for (let i = 0; i < maxSearchDays; i++) {
+  for (let i = 0; i <= DOMAIN_PENALTY_MAX_SKIP; i++) {
     const dateStr = toDateStr(candidate);
     if (
       hasDailyCapacity(dateStr, slots) &&
-      canScheduleTopic(dateStr, topicCategory, slots)
+      canScheduleTopic(dateStr, topicCategory, slots) &&
+      canScheduleHighBloom(dateStr, bloomLevel, slots) && // [方向A]
+      isDomainCompatible(dateStr, topicCategory, slots)  // [方向B]
     ) {
       return candidate;
     }
     candidate = addDays(candidate, 1);
   }
-  // fallback：超出搜索范围则直接使用最早日期
-  return earliestStart;
+
+  // ── 第二轮：放宽软约束，仅保留硬约束 ─────────────────────────────
+  candidate = earliestStart;
+  for (let i = 0; i < maxSearchDays; i++) {
+    const dateStr = toDateStr(candidate);
+    if (
+      hasDailyCapacity(dateStr, slots) &&
+      canScheduleTopic(dateStr, topicCategory, slots) &&
+      canScheduleHighBloom(dateStr, bloomLevel, slots)   // [方向A] 保留
+    ) {
+      return candidate;
+    }
+    candidate = addDays(candidate, 1);
+  }
+
+  return earliestStart; // fallback
 }
 
 // ─── 4. Bloom 序列验证 ──────────────────────────────────────────────────
