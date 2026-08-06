@@ -506,7 +506,7 @@ export async function POST(
           registerDailySlot(actualDate.toISOString().slice(0, 10), topicCategory, dailySlots, s.bloom_level ?? 2);
           cumulativeDay = actualStartDay + s.duration_days;
 
-          const subtaskResources: Resource[] = (s.resource_indices ?? [])
+          const subtaskResources: TrustableResource[] = (s.resource_indices ?? [])
             .map((idx: number) => resources[idx])
             .filter(Boolean);
 
