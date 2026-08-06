@@ -15,6 +15,7 @@ import { getSubtaskActualDates } from "./subtask-row";
 import { TimelineCard, TimelineSectionHeader } from "./timeline-card";
 import { SubtaskDetailModal } from "./subtask-detail-modal";
 import { CongratulationsModal, type CongratsData } from "./congrats-modal";
+import { StreakBar } from "./streak-bar";
 
 // ─── Design Tokens ────────────────────────────────────────────────────
 const T = {
@@ -54,6 +55,7 @@ export function HomePage() {
   const [showInput, setShowInput] = useState(false);
   const [detailSubtask, setDetailSubtask] = useState<SubtaskWithTask | null>(null);
   const [congrats, setCongrats] = useState<CongratsData | null>(null);
+  const [streakRefresh, setStreakRefresh] = useState(0);
   const [highlightedSubtaskId, setHighlightedSubtaskId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,6 +101,7 @@ export function HomePage() {
     setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: next } : s));
     setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: next } : prev);
     await toggleSubtask(taskId, subtaskId, next).catch(() => {});
+    if (next) setStreakRefresh((n) => n + 1); // 完成时刷新连续统计
     setSubtaskRows((prev) => {
       const rows = prev.filter((s) => s.taskId === taskId);
       const allDone = next && rows.length > 0 && rows.every((s) => (s.id === subtaskId ? next : s.completed));
@@ -159,6 +162,9 @@ export function HomePage() {
               <span style={{ fontSize: 11, color: T.muted }}>待完成 {totalPending} 项</span>
             )}
           </div>
+
+          {/* 连续性统计条 */}
+          {user && <StreakBar refreshTrigger={streakRefresh} />}
 
           {/* 内容区 */}
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
