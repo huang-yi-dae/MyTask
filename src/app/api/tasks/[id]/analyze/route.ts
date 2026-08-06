@@ -23,15 +23,8 @@ import {
   type DailySlot,
 } from "@/lib/scheduler";
 
-// ─── Resource type ────────────────────────────────────────────────────
-interface Resource {
-  type: "link" | "search" | "person" | "course";
-  title: string;
-  url?: string;
-  searchQuery?: string;
-  author?: string;
-  platform?: string;
-}
+// ─── Resource type（使用 TrustableResource，含 trust_level）────────────────
+// TrustableResource 从 src/lib/tavily.ts 导入，不在此重复定义
 
 // ─── Stage 1: Intent Analysis ──────────────────────────────────────────
 // 理论依据：
