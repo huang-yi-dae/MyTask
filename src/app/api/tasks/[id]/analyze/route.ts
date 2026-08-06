@@ -349,12 +349,13 @@ export async function POST(
 
         send("intent_done", { taskName, domain, topicCategory, priorLevel, bloomTarget });
 
-        // ── Stage 2: Resources ────────────────────────────────────────
-        send("phase", { step: "search", label: "// 阶段 2/4 · 匹配适合您基础的学习资源…" });
+        // ── Stage 2: Resources（两阶段分离）──────────────────────────
+        // Step A：AI 只生成搜索意图，不生成 URL
+        send("phase", { step: "search", label: "// 阶段 2/4 · 生成搜索策略，检索可信资源…" });
 
-        const resourceRaw = await callAI(
-          "你是资深学习资源顾问，请以 JSON 格式精确回复，不要加 markdown 代码块。",
-          RESOURCE_PROMPT
+        const intentRawStr = await callAI(
+          "你是资深学习资源顾问，请以 JSON 格式精确回复，不要加 markdown 代码块。严禁生成任何 URL。",
+          RESOURCE_INTENT_PROMPT
             .replace("{GOAL}", rawGoal)
             .replace("{DOMAIN}", domain)
             .replace(/{PRIOR_LEVEL}/g, priorLevel)
@@ -362,9 +363,20 @@ export async function POST(
           (d) => send("delta", { stage: "search", content: d })
         );
 
-        interface ResourceResult { resources?: Resource[] }
-        const resources: Resource[] = parseJson<ResourceResult>(resourceRaw)?.resources ?? [];
-        send("search_done", { resourceCount: resources.length });
+        interface IntentListResult { search_intents?: SearchIntent[] }
+        const intentList = parseJson<IntentListResult>(intentRawStr)?.search_intents ?? [];
+
+        // Step B：代码调用 Tavily，从白名单域名检索真实 URL
+        // 有 TAVILY_API_KEY → verified；无 → search_only
+        send("phase", { step: "search", label: `// 阶段 2/4 · 正在检索 ${intentList.length} 个资源来源…` });
+        const resources: TrustableResource[] = await resolveResources(intentList, topicCategory);
+
+        const verifiedCount = resources.filter((r) => r.trust_level === "verified").length;
+        send("search_done", {
+          resourceCount: resources.length,
+          verifiedCount,
+          searchOnlyCount: resources.length - verifiedCount,
+        });
 
         // ── Stage 3: Plan ─────────────────────────────────────────────
         send("phase", { step: "plan", label: "// 阶段 3/4 · 按 Bloom 认知层级设计学习路径…" });
