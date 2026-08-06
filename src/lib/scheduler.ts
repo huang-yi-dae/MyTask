@@ -1,74 +1,155 @@
 /**
- * AutoTask 全局排期算法 v2
+ * AutoTask 全局排期算法 v3
  *
- * 理论依据：
+ * ─── 原有理论依据（1-7，保持不变）──────────────────────────────────
  *
- * 1. 接续排期（Sequential Scheduling）
- *    新任务的 startDate 从当前所有未完成任务的最后一天 +1 开始，
- *    避免多任务在同一时间区间内堆叠。
+ * 1. 接续排期：新任务从所有活跃任务最末日 +1 开始。
+ * 2. 每日深度工作上限：MAX_SUBTASKS_PER_DAY = 3（≈ 2-4h 深度工作）。
+ *    依据：Cal Newport《Deep Work》& Ericsson 每日 4h 上限研究。
+ * 3. 交错主题学习：同一主题每天 ≤ 1 次。
+ *    依据：Kornell & Bjork (2008) — 交错练习长期留存率 +43%。
+ * 4. 四象限优先级：urgency × importance + Q2 战略加成。
+ *    依据：Covey (1989) Eisenhower Matrix。
+ * 5. 递延惩罚：每超期 7 天 +8 分，防止任务雪球效应。
+ *    依据：Todoist Smart Schedule 设计。
+ * 6. Bloom 分层：低层级子任务优先排在前面（脚手架学习）。
+ *    依据：Anderson & Krathwohl (2001) + Vygotsky ZPD。
+ * 7. 窗口式排期：空白 >7 天则新任务直接从今天开始。
  *
- * 2. 每日深度工作上限（Deep Work Budget）
- *    参考 Cal Newport《Deep Work》& Anders Ericsson 研究：
- *    大多数人每天能维持的深度认知工作上限为 4 小时（240分钟）。
- *    本系统将每天的"子任务槽位"限定为 MAX_SUBTASKS_PER_DAY = 3，
- *    对应约 2-4 小时实际学习时间，防止过载导致放弃。
+ * ─── v3 新增（方向 A & B）────────────────────────────────────────────
  *
- * 3. 交错主题学习（Interleaved Practice）
- *    研究来源：Kornell & Bjork (2008), "Learning Concepts and Categories"
- *    同一主题在同一天内不超过 MAX_SAME_TOPIC_PER_DAY = 1，
- *    强制不同主题交错排列，利用"间隔效应"提升长期记忆巩固。
+ * 8. [方向A] Flow-State 难度波浪（Daily Difficulty Wave）
+ *    理论：Csikszentmihalyi (1990) Flow Theory + BRAC 90 分钟周期
+ *          (Kleitman, 1963; Lavie, Technion Institute)。
+ *    实现：每天高难度任务（Bloom ≥ HIGH_BLOOM_THRESHOLD=4）上限 =
+ *          MAX_HIGH_BLOOM_PER_DAY = 1。当天已有高难度任务后，
+ *          后续只能安排 Bloom ≤ 3 的内容（复习/理解/应用），
+ *          形成"高峰 + 缓坡"的自然难度波浪，保持心流、减少疲劳。
  *
- * 4. 四象限优先级（Eisenhower Matrix）
- *    urgency × importance 乘积作为基础优先级分数。
- *    Q1(紧急+重要)=25分, Q2(不紧急+重要)=最高战略价值但不被立即处理，
- *    因此给予 Q2 任务额外 bonus 鼓励提前安排。
+ * 9. [方向A] BRAC 时长对齐（90-min Block Alignment）
+ *    实现：assessTaskDuration 新增 estimatedHours 参数，
+ *          将学习时长映射到推荐天数：
+ *            ≤1.5h → 1 块 → 1 天
+ *            1.5-3h → 2 块 → 1-2 天
+ *            3-4.5h → 3 块 → 2-3 天（每日上限）
+ *            >4.5h → 建议拆分
  *
- * 5. 递延惩罚（Delay Penalty）
- *    参考 Todoist Smart Schedule 算法：
- *    被拖延超过 7 天的任务获得额外优先级 boost，
- *    防止"雪球效应"——任务被无限推迟。
- *
- * 6. Bloom 分层标记（Bloom's Taxonomy Level）
- *    任务子步骤携带 bloom_level (1-6)：
- *    记忆(1) → 理解(2) → 应用(3) → 分析(4) → 评估(5) → 创造(6)
- *    排期时低 Bloom 层级的子任务优先排在前面，符合"脚手架学习"原则
- *    （Scaffolding, Vygotsky ZPD theory）。
- *
- * 7. 窗口式排期（Sliding Window）
- *    在接续排期基础上，若用户已有 >7 天的任务空白（无任何子任务），
- *    新任务直接从今天开始，不再等待遥远的将来。
+ * 10. [方向B] 跨领域认知距离惩罚（Domain Affinity Matrix）
+ *    理论：Rubinstein, Meyer & Evans (2001) — 任务切换导致效率
+ *          损失最高 40%；不同神经回路的领域切换代价极高。
+ *    实现：8×8 DOMAIN_AFFINITY_MATRIX 量化 8 个学习领域间的
+ *          认知回路相似度。DailySlot 记录当天已安排的领域，
+ *          若新任务与已安排领域的最低亲和度 < DOMAIN_AFFINITY_THRESHOLD
+ *          (0.4) 则触发软惩罚（最多推 DOMAIN_PENALTY_MAX_SKIP=3 天后放弃）。
+ *          编程+数学（0.85，高亲和）可同天；编程+绘画（0.2，低亲和）
+ *          优先跨天安排。
  */
 
 // ─── Constants ────────────────────────────────────────────────────────
 
-/** 每天最多安排子任务数（对应约 2-4 小时深度工作）*/
 export const MAX_SUBTASKS_PER_DAY = 3;
-
-/** 同一主题每天最多出现次数（交错学习原则）*/
 export const MAX_SAME_TOPIC_PER_DAY = 1;
-
-/** 超过此天数的任务间隙，新任务直接插到今天（窗口式排期）*/
 export const SCHEDULING_WINDOW_DAYS = 7;
-
-/** 连续学习超过此天数，建议插入复习节点 */
 export const REVIEW_INTERVAL_DAYS = 5;
+
+/** [方向A] 每天高难度（Bloom ≥ HIGH_BLOOM_THRESHOLD）子任务上限 */
+export const MAX_HIGH_BLOOM_PER_DAY = 1;
+/** [方向A] "高难度"阈值（分析/评估/创造 = Bloom 4/5/6）*/
+export const HIGH_BLOOM_THRESHOLD = 4;
+
+/** [方向B] 领域亲和度低于此值时触发软惩罚 */
+export const DOMAIN_AFFINITY_THRESHOLD = 0.4;
+/** [方向B] 软约束最多推迟天数，超过后放弃软约束 */
+export const DOMAIN_PENALTY_MAX_SKIP = 3;
 
 // ─── Bloom's Taxonomy Level ────────────────────────────────────────────
 
-/**
- * Bloom 认知目标分类（2001 修订版）
- * 用于子任务排序和进度评估。
- */
 export type BloomLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 export const BLOOM_LABELS: Record<BloomLevel, string> = {
-  1: "记忆",  // Remember — 回忆事实
-  2: "理解",  // Understand — 解释概念
-  3: "应用",  // Apply — 在新情境中使用
-  4: "分析",  // Analyze — 拆解结构
-  5: "评估",  // Evaluate — 做出判断
-  6: "创造",  // Create — 产出新事物
+  1: "记忆",
+  2: "理解",
+  3: "应用",
+  4: "分析",
+  5: "评估",
+  6: "创造",
 };
+
+// ─── [方向B] 领域分类 & 亲和度矩阵 ──────────────────────────────────────
+
+export const LEARNING_DOMAINS = [
+  "编程与技术",   // 0
+  "数学与逻辑",   // 1
+  "语言与写作",   // 2
+  "自然科学",     // 3
+  "人文与社科",   // 4
+  "艺术与创作",   // 5
+  "身体与健康",   // 6
+  "职业与商业",   // 7
+] as const;
+
+export type LearningDomain = typeof LEARNING_DOMAINS[number];
+
+/**
+ * [方向B] 8×8 领域亲和度矩阵（对称，值域 0.0~1.0）
+ * 行/列顺序：[编程, 数学, 语言, 自然科学, 人文社科, 艺术创作, 身体健康, 职业商业]
+ *
+ * 值含义（基于 Rubinstein et al., 2001 任务切换研究）：
+ *   1.0  — 共享同一核心认知回路（编程↔数学：抽象逻辑）
+ *   0.7+ — 大量共享（数学↔自然科学：推导思维）
+ *   0.5  — 轻度重叠（编程↔职业商业：工程实践）
+ *   0.3  — 不同回路，切换代价较高（语言↔数学）
+ *   0.1  — 完全不同回路，切换代价极高（编程↔身体健康）
+ */
+export const DOMAIN_AFFINITY_MATRIX: number[][] = [
+  //  编程   数学   语言   自然科学  人文社科  艺术创作  身体健康  职业商业
+  [  1.0,  0.85,  0.3,   0.7,    0.4,    0.2,    0.1,   0.5  ],  // 编程与技术
+  [  0.85, 1.0,   0.3,   0.75,   0.4,    0.2,    0.1,   0.45 ],  // 数学与逻辑
+  [  0.3,  0.3,   1.0,   0.35,   0.75,   0.55,   0.2,   0.5  ],  // 语言与写作
+  [  0.7,  0.75,  0.35,  1.0,    0.5,    0.3,    0.3,   0.45 ],  // 自然科学
+  [  0.4,  0.4,   0.75,  0.5,    1.0,    0.5,    0.2,   0.6  ],  // 人文与社科
+  [  0.2,  0.2,   0.55,  0.3,    0.5,    1.0,    0.4,   0.4  ],  // 艺术与创作
+  [  0.1,  0.1,   0.2,   0.3,    0.2,    0.4,    1.0,   0.3  ],  // 身体与健康
+  [  0.5,  0.45,  0.5,   0.45,   0.6,    0.4,    0.3,   1.0  ],  // 职业与商业
+];
+
+/**
+ * 将主题字符串解析为领域索引（0-7）。
+ * 无法匹配返回 -1（不受亲和度约束）。
+ */
+export function resolveDomainIndex(topic: string): number {
+  const t = topic.trim();
+  if (/编程|技术|代码|程序|算法|web|ai|机器学习/i.test(t)) return 0;
+  if (/数学|逻辑|微积分|统计|离散|代数/i.test(t)) return 1;
+  if (/语言|写作|英语|日语|中文|文章|阅读/i.test(t)) return 2;
+  if (/物理|化学|生物|自然|科学|天文/i.test(t)) return 3;
+  if (/历史|哲学|经济|心理|社科|人文|政治/i.test(t)) return 4;
+  if (/艺术|绘画|音乐|设计|摄影|创作|手工/i.test(t)) return 5;
+  if (/健身|运动|健康|营养|冥想|身体/i.test(t)) return 6;
+  if (/职业|商业|产品|营销|投资|管理|创业/i.test(t)) return 7;
+  return -1;
+}
+
+/**
+ * [方向B] 计算新任务领域与某天已安排领域的最低亲和度（0~1）。
+ * 当天无任务或领域不可识别时返回 1.0（无惩罚）。
+ */
+export function computeDayAffinityScore(
+  newTopic: string,
+  scheduledTopics: string[],
+): number {
+  if (scheduledTopics.length === 0) return 1.0;
+  const newIdx = resolveDomainIndex(newTopic);
+  if (newIdx === -1) return 1.0;
+  let minAffinity = 1.0;
+  for (const existing of scheduledTopics) {
+    const existIdx = resolveDomainIndex(existing);
+    if (existIdx === -1) continue;
+    const affinity = DOMAIN_AFFINITY_MATRIX[newIdx][existIdx];
+    if (affinity < minAffinity) minAffinity = affinity;
+  }
+  return minAffinity;
+}
 
 // ─── Core Interfaces ──────────────────────────────────────────────────
 
@@ -83,19 +164,24 @@ export interface ScheduledTask {
 
 export interface TaskPriority {
   taskId: string;
-  urgencyScore: number;       // 1-5，5=最紧迫
-  importanceScore: number;    // 1-5，5=最重要
+  urgencyScore: number;
+  importanceScore: number;
   originalStartDate?: Date;
   topicCategory: string;
   totalDays: number;
-  bloomLevel?: BloomLevel;    // 整体任务的 Bloom 层级（由 AI 评估）
+  bloomLevel?: BloomLevel;
 }
 
-/** 每日排期状态，用于全局窗口分配 */
+/**
+ * 每日排期状态。
+ * v3 新增：highBloomCount [方向A]、scheduledTopics [方向B]
+ */
 export interface DailySlot {
-  date: string;               // "YYYY-MM-DD"
-  subtaskCount: number;       // 当天已分配子任务总数
-  topicCounts: Map<string, number>;  // 主题 → 当天出现次数
+  date: string;
+  subtaskCount: number;
+  topicCounts: Map<string, number>;
+  highBloomCount: number;     // [方向A] 当天高难度任务数（Bloom ≥ 4）
+  scheduledTopics: string[];  // [方向B] 当天已安排的领域列表
 }
 
 // ─── 1. 接续排期：计算新任务起始日期 ────────────────────────────────────
