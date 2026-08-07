@@ -7,21 +7,37 @@
  *   当用户输入包含 URL 时，在 AI 分析之前先抓取真实内容，
  *   再将内容注入 Prompt，让 AI 基于实际页面而非猜测来规划学习路径。
  *
- * 支持的 URL 类型（按抓取策略分类）：
- *   - GitHub 仓库      → 调用 GitHub API 读取 README + 仓库信息
- *   - GitHub 文件/Gist → 直接读取原始内容
- *   - 普通网页/文章    → fetch HTML → 提取 title + meta + 正文段落
- *   - 视频平台         → 提取标题 + 描述（无法抓取字幕）
+ * 支持的 URL 类型：
+ *   - GitHub 仓库/文件  → GitHub API + raw 内容
+ *   - arXiv 论文        → abs 页摘要 + ar5iv 章节
+ *   - 掘金/知乎/Medium  → 平台专属正文提取
+ *   - Coursera/edX      → 课程大纲 + 评价 + 技能
+ *   - npm/PyPI          → 包描述 + 依赖列表
+ *   - 视频平台          → 标题+描述（无字幕）
+ *   - 普通网页/文档     → title + meta + 正文
  *
  * 降级策略：
  *   任何抓取失败 → 返回 null，主流程继续但不注入内容（不阻断任务创建）
  */
+
+import { fetchArxiv } from "./fetchers/arxiv";
+import { fetchArticle, detectArticlePlatform } from "./fetchers/article";
+import { fetchCourse, detectCoursePlatform } from "./fetchers/course";
+import { fetchNpm, fetchPypi, detectPackageRegistry } from "./fetchers/package";
 
 // ─── 类型定义 ────────────────────────────────────────────────────────────
 
 export type UrlType =
   | "github_repo"
   | "github_file"
+  | "arxiv"
+  | "juejin"
+  | "zhihu"
+  | "medium"
+  | "coursera"
+  | "edx"
+  | "npm"
+  | "pypi"
   | "youtube"
   | "bilibili"
   | "article"
@@ -60,19 +76,41 @@ export function isUrlDominant(input: string): boolean {
 /** 识别 URL 类型 */
 export function detectUrlType(url: string): UrlType {
   const u = url.toLowerCase();
-  if (u.includes("github.com")) {
-    // github.com/owner/repo/blob/... 或 raw.githubusercontent.com → file
+
+  // GitHub
+  if (u.includes("github.com") || u.includes("raw.githubusercontent.com")) {
     if (u.includes("/blob/") || u.includes("raw.githubusercontent.com") || u.includes("/gist")) {
       return "github_file";
     }
     return "github_repo";
   }
+
+  // arXiv
+  if (u.includes("arxiv.org") || u.includes("ar5iv.org")) return "arxiv";
+
+  // 视频平台
   if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
   if (u.includes("bilibili.com") || u.includes("b23.tv")) return "bilibili";
+
+  // 课程平台
+  if (u.includes("coursera.org")) return "coursera";
+  if (u.includes("edx.org")) return "edx";
+
+  // 包管理
+  if (u.includes("npmjs.com/package/")) return "npm";
+  if (u.includes("pypi.org/project/")) return "pypi";
+
+  // 中文技术社区 & Medium
+  if (u.includes("juejin.cn")) return "juejin";
+  if (u.includes("zhihu.com")) return "zhihu";
+  if (u.includes("medium.com") || u.match(/\w+\.medium\.com/)) return "medium";
+
+  // 技术文档
   if (
     u.includes("docs.") || u.includes("/docs/") || u.includes("documentation") ||
     u.includes("developer.mozilla") || u.includes("readthedocs") || u.includes("docs.python")
   ) return "docs";
+
   return "article";
 }
 
@@ -247,19 +285,47 @@ export async function fetchUrlContent(url: string): Promise<FetchedContent | nul
 
   try {
     switch (urlType) {
+      // ── GitHub ──────────────────────────────────────────────────────────
       case "github_repo":
         return await fetchGithubRepo(url);
       case "github_file": {
-        // 把 /blob/ 替换成 raw 路径
         const rawUrl = url
           .replace("github.com", "raw.githubusercontent.com")
           .replace("/blob/", "/");
         return await fetchWebPage(rawUrl, "github_file");
       }
+
+      // ── 学术论文 ────────────────────────────────────────────────────────
+      case "arxiv":
+        return await fetchArxiv(url);
+
+      // ── 课程平台 ────────────────────────────────────────────────────────
+      case "coursera":
+        return await fetchCourse(url, "coursera");
+      case "edx":
+        return await fetchCourse(url, "edx");
+
+      // ── 包管理平台 ──────────────────────────────────────────────────────
+      case "npm":
+        return await fetchNpm(url);
+      case "pypi":
+        return await fetchPypi(url);
+
+      // ── 中文社区 & Medium ────────────────────────────────────────────────
+      case "juejin":
+        return await fetchArticle(url, "juejin");
+      case "zhihu":
+        return await fetchArticle(url, "zhihu");
+      case "medium":
+        return await fetchArticle(url, "medium");
+
+      // ── 视频平台 ────────────────────────────────────────────────────────
       case "youtube":
         return buildVideoContent(url, "youtube");
       case "bilibili":
         return buildVideoContent(url, "bilibili");
+
+      // ── 通用网页 ────────────────────────────────────────────────────────
       case "docs":
       case "article":
       default:
@@ -277,6 +343,14 @@ export function formatContentForPrompt(content: FetchedContent): string {
   const typeLabel: Record<UrlType, string> = {
     github_repo: "GitHub 仓库",
     github_file: "GitHub 文件",
+    arxiv:       "arXiv 论文",
+    juejin:      "掘金文章",
+    zhihu:       "知乎文章",
+    medium:      "Medium 文章",
+    coursera:    "Coursera 课程",
+    edx:         "edX 课程",
+    npm:         "npm 包",
+    pypi:        "PyPI 包",
     youtube:     "YouTube 视频",
     bilibili:    "Bilibili 视频",
     article:     "网页文章",
