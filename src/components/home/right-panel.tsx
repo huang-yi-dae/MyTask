@@ -5,6 +5,7 @@ import { request } from "@/lib/api/request";
 import { AppAIClientUnavailableError } from "@/lib/api/app-ai-request";
 import { createTask, getTask } from "@/lib/api/tasks";
 import type { TaskWithSubtasks } from "@/lib/api/tasks";
+import type { TrustableResource } from "@/lib/tavily";
 import { memory } from "@eazo/sdk";
 
 const T = {
@@ -14,14 +15,8 @@ const T = {
   orange: "#E07B2A", purple: "#7C4DFF",
 } as const;
 
-export interface Resource {
-  type: "link" | "search" | "person" | "course";
-  title: string;
-  url?: string;
-  searchQuery?: string;
-  author?: string;
-  platform?: string;
-}
+// Resource 与 TrustableResource 对齐，保留 export 供外部兼容引用
+export type Resource = TrustableResource;
 
 type Phase = "idle"|"intent"|"search"|"plan"|"validate"|"revise"|"saving"|"done"|"error";
 interface StreamState { phase: Phase; label: string; deltaLen: number; errorMsg: string; }
@@ -36,13 +31,6 @@ const PIPELINE_STEPS: Array<{ key: Phase; label: string; icon: string }> = [
 ];
 const PHASE_ORDER: Phase[] = ["idle","intent","search","plan","validate","revise","saving","done"];
 
-export interface UrlFetchedInfo {
-  url: string;
-  urlType: string;
-  title: string;
-  tags: string[];
-}
-
 export interface AnalysisEntry {
   taskId: string;
   taskTitle: string;
@@ -50,7 +38,6 @@ export interface AnalysisEntry {
   topicCategory?: string;
   stream: StreamState;
   task: TaskWithSubtasks | null;
-  urlFetched?: UrlFetchedInfo;  // URL 抓取结果（Stage 0）
 }
 
 export function useAnalysisPanel() {
@@ -93,11 +80,6 @@ export function useAnalysisPanel() {
             } else if (msg.event === "delta") {
               setEntries((prev) => prev.map((e) => e.taskId === taskId
                 ? { ...e, stream: { ...e.stream, deltaLen: e.stream.deltaLen + 1 } } : e));
-            } else if (msg.event === "url_fetched") {
-              const d = msg.data as { url?: string; urlType?: string; title?: string; tags?: string[] };
-              setEntries((prev) => prev.map((e) => e.taskId === taskId
-                ? { ...e, urlFetched: { url: d.url ?? "", urlType: d.urlType ?? "article", title: d.title ?? "", tags: d.tags ?? [] } }
-                : e));
             } else if (msg.event === "intent_done") {
               const d = msg.data as { taskName?: string; topicCategory?: string };
               setEntries((prev) => prev.map((e) => e.taskId === taskId
@@ -326,32 +308,6 @@ function EntryDetail({ entry, onRegen, onRemove, onToggleSubtask, onJumpToSubtas
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
             <span style={{ background: T.paper, color: T.muted, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, border: `1px solid ${T.line}`, letterSpacing: "0.04em", textTransform: "uppercase" as const, fontFamily: "var(--font-geist-mono), monospace", flexShrink: 0 }}>原始输入</span>
             <span style={{ color: T.muted, fontSize: 12 }}>{entry.rawInput}</span>
-          </div>
-        )}
-        {/* URL 抓取结果卡片 */}
-        {entry.urlFetched && (
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 7, padding: "8px 10px", background: "rgba(47,93,80,0.05)", border: "1px solid rgba(47,93,80,0.2)", borderRadius: 8 }}>
-            <span style={{ fontSize: 14, flexShrink: 0 }}>
-              {entry.urlFetched.urlType === "github_repo" ? "📦" : entry.urlFetched.urlType === "github_file" ? "📄" : entry.urlFetched.urlType === "youtube" ? "🎬" : entry.urlFetched.urlType === "bilibili" ? "📺" : entry.urlFetched.urlType === "docs" ? "📖" : "🌐"}
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: "#2F5D50", background: "rgba(47,93,80,0.12)", border: "1px solid rgba(47,93,80,0.2)", borderRadius: 3, padding: "1px 5px" }}>✓ 已读取</span>
-                <span style={{ fontSize: 10, color: T.muted }}>
-                  {entry.urlFetched.urlType === "github_repo" ? "GitHub 仓库" : entry.urlFetched.urlType === "docs" ? "技术文档" : entry.urlFetched.urlType === "youtube" ? "YouTube" : entry.urlFetched.urlType === "bilibili" ? "Bilibili" : "网页"}
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: "#111111", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {entry.urlFetched.title}
-              </div>
-              {entry.urlFetched.tags.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 3 }}>
-                  {entry.urlFetched.tags.slice(0, 4).map((tag, i) => (
-                    <span key={i} style={{ fontSize: 9, color: T.accent, background: "rgba(59,122,255,0.08)", border: "1px solid rgba(59,122,255,0.2)", borderRadius: 3, padding: "1px 5px" }}>{tag}</span>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
         {task && <div style={{ color: T.muted, fontSize: 11, marginTop: 4, fontFamily: "var(--font-geist-mono), monospace" }}>{task.totalDays}天计划 · {completedCount}/{totalCount} 完成{task.status === "done" && <span style={{ marginLeft: 6, color: T.green }}>✓ 已完成</span>}</div>}
