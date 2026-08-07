@@ -7,14 +7,13 @@
  *   ┌─────────────────────────────────────┐
  *   │▓▓▓▓▓▓░░░░░░░░  ← 顶部时长色条       │
  *   │ ○  子任务标题                  2.5h │
- *   │    大任务名 · Bloom L3·应用   2天   │
- *   │    [主题] [⚡极紧急]               │
+ *   │    大任务名 · [hover才展开徽章]      │
  *   └─────────────────────────────────────┘
  *
- * 顶部色条宽度 = deepWorkHours / 4.5（最大1 BRAC块组=4.5h）→ 百分比
- * 颜色来自大任务的 topicColor（按 topic 派发）
+ * 徽章行（Bloom、日期）默认收起，hover 才渐显
  */
 
+import { useState } from "react";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
 export { getSubtaskDateRange, getSubtaskActualDates } from "./subtask-row";
 
@@ -92,18 +91,16 @@ export function TimelineCard({
   onOpen, onSelect, onDeleteTask, onToggle,
 }: CardProps) {
   const taskColor = getTaskColor(row.taskId, row.topic);
+  const [hovered, setHovered] = useState(false);
 
-  // 直接读 DB 字段；旧数据没有时用 urgency 反推降级
-  const bloomRaw = row.bloomLevel
-    ? Math.max(1, Math.min(6, row.bloomLevel))
-    : (row.urgency ? Math.max(1, Math.min(5, 6 - row.urgency)) : 2);
+  // bloom_level 和 deepWorkHours 不在 DB schema 里，用可用字段估算
+  // urgency 1=极紧急(高bloom)→5=不紧急(低bloom)，倒转映射 bloom 1-5
+  const bloomRaw = row.urgency ? Math.max(1, Math.min(5, 6 - row.urgency)) : 2;
   const bloomColor = BLOOM_COLORS[bloomRaw] ?? BLOOM_COLORS[2];
   const bloomLabel = BLOOM_LABELS[bloomRaw] ?? "理解";
 
-  // 直接读 DB 字段；旧数据没有时按 durationDays 估算
-  const deepHours = row.deepWorkHours
-    ? Math.min(4.5, Math.max(1.5, row.deepWorkHours))
-    : Math.min(4.5, Math.max(1.5, row.durationDays * 1.5));
+  // 预估深度学习时长：durationDays * 1.5h/天，上限 4.5h
+  const deepHours = Math.min(4.5, Math.max(1.5, row.durationDays * 1.5));
   // 色条宽度：以 4.5h 为上限
   const barPct = Math.min(100, Math.round((deepHours / 4.5) * 100));
 
@@ -113,6 +110,8 @@ export function TimelineCard({
   return (
     <div
       onClick={() => { onOpen(); onSelect(); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         background: isHighlighted ? T.highlight : row.completed ? "#FAFAF9" : T.surface,
         border: `1px solid ${isHighlighted ? "#F59E0B" : isSelected ? taskColor : T.line}`,
@@ -166,7 +165,7 @@ export function TimelineCard({
               {row.title}
             </div>
 
-            {/* 元信息行：大任务名 · Bloom */}
+            {/* 元信息行：大任务名 · Bloom（hover 展开） */}
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
               <span style={{
                 fontSize: 10, fontWeight: 600,
@@ -179,17 +178,30 @@ export function TimelineCard({
               }}>
                 {row.taskTitle}
               </span>
+              {/* 徽章行：默认隐藏，hover 渐显 */}
               <span style={{
                 fontSize: 10, fontWeight: 600,
                 color: bloomColor,
                 background: `${bloomColor}15`,
                 border: `1px solid ${bloomColor}30`,
                 borderRadius: 5, padding: "1px 7px",
+                opacity: hovered ? 1 : 0,
+                maxWidth: hovered ? 120 : 0,
+                overflow: "hidden",
+                transition: "opacity 0.2s, max-width 0.2s",
+                whiteSpace: "nowrap",
               }}>
                 L{bloomRaw} · {bloomLabel}
               </span>
               {dateRange && (
-                <span style={{ fontSize: 10, color: T.muted, fontFamily: "var(--font-geist-mono), monospace" }}>
+                <span style={{
+                  fontSize: 10, color: T.muted, fontFamily: "var(--font-geist-mono), monospace",
+                  opacity: hovered ? 1 : 0,
+                  maxWidth: hovered ? 80 : 0,
+                  overflow: "hidden",
+                  transition: "opacity 0.2s, max-width 0.2s",
+                  whiteSpace: "nowrap",
+                }}>
                   {dateRange}
                 </span>
               )}
