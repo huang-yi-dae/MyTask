@@ -9,13 +9,13 @@ import {
   toggleSubtask, updateTaskStatusApi,
 } from "@/lib/api/tasks";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
+import { StreakBar } from "./streak-bar";
 import { RightPanel, useAnalysisPanel } from "./right-panel";
 import { NewTaskInput } from "./new-task-input";
 import { getSubtaskActualDates } from "./subtask-row";
 import { TimelineCard, TimelineSectionHeader } from "./timeline-card";
 import { SubtaskDetailModal } from "./subtask-detail-modal";
 import { CongratulationsModal, type CongratsData } from "./congrats-modal";
-import { StreakBar } from "./streak-bar";
 
 // ─── Design Tokens ────────────────────────────────────────────────────
 const T = {
@@ -55,8 +55,8 @@ export function HomePage() {
   const [showInput, setShowInput] = useState(false);
   const [detailSubtask, setDetailSubtask] = useState<SubtaskWithTask | null>(null);
   const [congrats, setCongrats] = useState<CongratsData | null>(null);
-  const [streakRefresh, setStreakRefresh] = useState(0);
   const [highlightedSubtaskId, setHighlightedSubtaskId] = useState<string | null>(null);
+  const [streakTick, setStreakTick] = useState(0);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
@@ -101,7 +101,8 @@ export function HomePage() {
     setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: next } : s));
     setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: next } : prev);
     await toggleSubtask(taskId, subtaskId, next).catch(() => {});
-    if (next) setStreakRefresh((n) => n + 1); // 完成时刷新连续统计
+    // 完成时刷新 streak 统计
+    if (next) setStreakTick(t => t + 1);
     setSubtaskRows((prev) => {
       const rows = prev.filter((s) => s.taskId === taskId);
       const allDone = next && rows.length > 0 && rows.every((s) => (s.id === subtaskId ? next : s.completed));
@@ -163,8 +164,8 @@ export function HomePage() {
             )}
           </div>
 
-          {/* 连续性统计条 */}
-          {user && <StreakBar refreshTrigger={streakRefresh} />}
+          {/* 连续学习统计条 */}
+          {user && <StreakBar refreshTick={streakTick} />}
 
           {/* 内容区 */}
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
