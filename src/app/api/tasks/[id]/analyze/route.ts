@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { appAi } from "@/lib/eazo-ai-billing";
 import { resolveResources, type SearchIntent, type TrustableResource } from "@/lib/tavily";
+import { validateResources } from "@/lib/resource-validator";
 import { extractUrl, fetchUrlContent, formatContentForPrompt } from "@/lib/url-fetcher";
 import {
   getTaskById,
@@ -398,11 +399,18 @@ export async function POST(
         send("phase", { step: "search", label: `// 阶段 2/4 · 正在检索 ${intentList.length} 个资源来源…` });
         const resources: TrustableResource[] = await resolveResources(intentList, topicCategory);
 
+        // Step C：三维可信度验证（URL 存活 + 域名权威分 + 新鲜度）
+        // 并行 HEAD 检测，总耗时 ≤ 3s，不阻断主流程
+        send("phase", { step: "validate_resources", label: `// 阶段 2/4 · 验证 ${resources.filter(r => r.url).length} 条资源可达性…` });
+        await validateResources(resources);
+
         const verifiedCount = resources.filter((r) => r.trust_level === "verified").length;
+        const reachableCount = resources.filter((r) => r.url_status === "ok" || r.url_status === "redirect").length;
         send("search_done", {
           resourceCount: resources.length,
           verifiedCount,
           searchOnlyCount: resources.length - verifiedCount,
+          reachableCount,
         });
 
         // ── Stage 3: Plan ─────────────────────────────────────────────
@@ -548,8 +556,6 @@ export async function POST(
             urgency: urgencyScore,
             importance: importanceScore,
             keywords: keywordsArr.length > 0 ? JSON.stringify(keywordsArr) : null,
-            bloomLevel: s.bloom_level ?? null,         // ← 真实写入 DB
-            deepWorkHours: s.deep_work_hours ?? null,  // ← 真实写入 DB
           };
         });
 
