@@ -160,6 +160,8 @@ export type SubtaskInsert = {
   urgency?: number | null;
   importance?: number | null;
   keywords?: string | null;  // JSON string[]
+  bloomLevel?: number | null;     // 1-6 Bloom 认知层级
+  deepWorkHours?: number | null;  // 预计深度学习时长（小时）
 };
 
 export async function createSubtasks(
@@ -178,7 +180,13 @@ export async function toggleSubtask(
   id: string,
   completed: boolean
 ): Promise<void> {
-  await db.update(subtasks).set({ completed }).where(eq(subtasks.id, id));
+  await db.update(subtasks)
+    .set({
+      completed,
+      // 完成时记录时间戳（用于连续性追踪）；取消完成时清空
+      completedAt: completed ? new Date() : null,
+    })
+    .where(eq(subtasks.id, id));
 }
 
 /** 返回该用户所有任务的排期摘要（用于全局接续计算） */

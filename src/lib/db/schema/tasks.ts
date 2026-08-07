@@ -4,6 +4,7 @@ import {
   index,
   integer,
   pgTable,
+  real,
   text,
   timestamp,
   uuid,
@@ -54,6 +55,9 @@ export const subtasks = pgTable(
     urgency: integer("urgency"),         // 1-5 紧急度
     importance: integer("importance"),   // 1-5 重要度
     keywords: text("keywords"),          // JSON: string[] 关键词
+    bloomLevel: integer("bloom_level"),   // 1-6 Bloom 认知层级（AI 分析生成）
+    deepWorkHours: real("deep_work_hours"), // 预计深度学习时长（小时）
+    completedAt: timestamp("completed_at", { withTimezone: true }), // 完成时间（用于连续性追踪）
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
