@@ -17,6 +17,8 @@ import { getSubtaskActualDates } from "./subtask-row";
 import { TimelineCard, TimelineSectionHeader } from "./timeline-card";
 import { SubtaskDetailModal } from "./subtask-detail-modal";
 import { CongratulationsModal, type CongratsData } from "./congrats-modal";
+import { request } from "@/lib/api/request";
+import { encourageMessage } from "@/lib/growth";
 
 // ─── Design Tokens ────────────────────────────────────────────────────
 const T = {
@@ -103,7 +105,7 @@ export function HomePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries.map((e) => e.stream.phase).join(",")]);
 
-  const handleToggleSubtask = useCallback(async (taskId: string, subtaskId: string, current: boolean) => {
+  const handleToggleSubtask = useCallback(async (taskId: string, subtaskId: string, current: boolean, silent = false) => {
     const next = !current;
     setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: next } : s));
     setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: next } : prev);
@@ -122,9 +124,12 @@ export function HomePage() {
 
     // 仅在成功持久化后才计入 streak 与触发完成庆祝
     if (next) setStreakTick(t => t + 1);
+
+    // 是否整个大任务已完成（决定走庆祝弹窗还是即时微激励）
+    let allDone = false;
     setSubtaskRows((prev) => {
       const rows = prev.filter((s) => s.taskId === taskId);
-      const allDone = next && rows.length > 0 && rows.every((s) => (s.id === subtaskId ? next : s.completed));
+      allDone = next && rows.length > 0 && rows.every((s) => (s.id === subtaskId ? next : s.completed));
       if (allDone) {
         updateTaskStatusApi(taskId, "done").catch(() => {});
         const taskTitle = rows[0]?.taskTitle ?? "";
@@ -133,6 +138,17 @@ export function HomePage() {
       }
       return prev;
     });
+
+    // 方向D：即时微激励 —— 每完成一项就给正向反馈（整任务完成时交给庆祝弹窗，跳过操作不弹）
+    if (next && !silent && !allDone) {
+      try {
+        const res = await request("/api/user/stats");
+        if (res.ok) {
+          const s = await res.json() as { todayCount: number; totalCompleted: number };
+          showToast(encourageMessage(s.todayCount, s.totalCompleted));
+        }
+      } catch { /* 静默失败，不打扰用户 */ }
+    }
   }, [showToast, patchSubtaskCompleted]);
 
   // 确认延迟：startDay += 1，乐观更新本地 + 调后端重排；成功后给「已延迟 · 撤销」Toast
@@ -165,7 +181,7 @@ export function HomePage() {
   // 跳过：标记完成，并给「已跳过 · 撤销」Toast
   const handleSkip = useCallback(async (row: SubtaskWithTask) => {
     if (row.completed) return;
-    await handleToggleSubtask(row.taskId, row.id, false);
+    await handleToggleSubtask(row.taskId, row.id, false, true);  // silent：不弹微激励，改弹「已跳过」
     showToast(`已跳过「${row.title}」`, "撤销", () => {
       handleToggleSubtask(row.taskId, row.id, true);
     });
