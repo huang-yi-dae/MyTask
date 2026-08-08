@@ -388,7 +388,7 @@ export function HomePage() {
                     accentColor={section.accentColor}
                     pendingCount={section.rows.filter(r => !r.completed).length}
                   />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {section.rows.map((row) => (
                       <div key={row.id} id={`subtask-card-${row.id}`}>
                         <TimelineCard
