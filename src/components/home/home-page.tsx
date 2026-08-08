@@ -135,6 +135,42 @@ export function HomePage() {
   const totalPending = subtaskRows.filter(r => !r.completed).length;
   const todayStr = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 
+  // ── 全局键盘快捷键 ──────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // 如果焦点在输入框/文本区/可编辑区，不触发
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+
+      if (e.key === "n" || e.key === "N") {
+        // N → 打开新建弹窗
+        if (!showInput && !detailSubtask && !congrats) {
+          e.preventDefault();
+          setShowInput(true);
+        }
+      } else if (e.key === "Escape") {
+        // Esc → 按层级关闭
+        if (detailSubtask) {
+          setDetailSubtask(null);
+        } else if (showInput) {
+          setShowInput(false);
+        } else if (focusedId) {
+          setFocusedId(null);
+        }
+      } else if (e.key === " ") {
+        // Space → toggle 当前聚焦子任务中第一个未完成的
+        if (!focusedId) return;
+        const first = subtaskRows.find(s => s.taskId === focusedId && !s.completed);
+        if (first) {
+          e.preventDefault();
+          handleToggleSubtask(first.taskId, first.id, first.completed);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showInput, detailSubtask, congrats, focusedId, subtaskRows, handleToggleSubtask, setFocusedId]);
+
   return (
     <div style={{ background: T.bg, height: "100%", display: "flex", flexDirection: "column", fontFamily: "var(--font-geist), Geist, system-ui, sans-serif" }}>
       <header style={{ background: T.surface, borderBottom: `1px solid ${T.line}`, padding: "0 24px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
@@ -260,7 +296,11 @@ export function HomePage() {
 
       <footer style={{ background: T.surface, borderTop: `1px solid ${T.line}`, padding: "7px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ color: T.muted, fontSize: 12 }}>今天：{todayStr}</span>
-        <span style={{ color: T.muted, fontSize: 12 }}>点击任务行查看详情 · 右侧可跳转日期视图</span>
+        <span style={{ color: T.muted, fontSize: 11, display: "flex", gap: 12 }}>
+          <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>N</kbd> 新建</span>
+          <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>Space</kbd> 完成</span>
+          <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>Esc</kbd> 关闭</span>
+        </span>
       </footer>
 
       {showInput && <NewTaskInput onClose={() => setShowInput(false)} onSubmit={(goal) => startAnalysis(goal)} />}
