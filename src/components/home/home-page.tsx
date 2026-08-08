@@ -280,6 +280,7 @@ export function HomePage() {
                           onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
                           onDeleteTask={handleDeleteTask}
                           onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
+                          onSkip={(e) => { e.stopPropagation(); if (!row.completed) handleToggleSubtask(row.taskId, row.id, row.completed); }}
                         />
                       </div>
                     ))}
