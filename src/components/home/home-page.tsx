@@ -189,7 +189,11 @@ export function HomePage() {
   // 扁平化的可见顺序（供 ↑↓ 键盘导航）
   const flatRows = sections.flatMap(s => s.rows);
   const totalPending = subtaskRows.filter(r => !r.completed).length;
-  const todayStr = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+  // 日期在客户端 effect 里格式化，避免 SSR/CSR 时区不一致导致 hydration mismatch
+  const [todayStr, setTodayStr] = useState("");
+  useEffect(() => {
+    setTodayStr(new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" }));
+  }, []);
 
   // ── 全局键盘快捷键 ──────────────────────────────────────────────
   useEffect(() => {
