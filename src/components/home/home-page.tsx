@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEazo } from "@eazo/sdk/react";
 import { auth } from "@eazo/sdk";
 import {
-  deleteTask, getSubtasksWithTask, getTasksWithSubtasks,
+  getSubtasksWithTask, getTasksWithSubtasks,
   toggleSubtask, updateTaskStatusApi,
 } from "@/lib/api/tasks";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
@@ -88,13 +88,6 @@ export function HomePage() {
     if (done && user) loadSubtasks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries.map((e) => e.stream.phase).join(",")]);
-
-  const handleDeleteTask = async (taskId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    await deleteTask(taskId).catch(() => {});
-    setSubtaskRows((prev) => prev.filter((s) => s.taskId !== taskId));
-    removeEntry(taskId);
-  };
 
   const handleToggleSubtask = useCallback(async (taskId: string, subtaskId: string, current: boolean) => {
     const next = !current;
@@ -278,7 +271,6 @@ export function HomePage() {
                           isHighlighted={highlightedSubtaskId === row.id}
                           onOpen={() => setDetailSubtask(row)}
                           onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
-                          onDeleteTask={handleDeleteTask}
                           onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
                           onSkip={(e) => { e.stopPropagation(); if (!row.completed) handleToggleSubtask(row.taskId, row.id, row.completed); }}
                         />
