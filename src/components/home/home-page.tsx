@@ -59,7 +59,16 @@ export function HomePage() {
   const [streakTick, setStreakTick] = useState(0);
   // 待确认延迟的子任务（打开确认弹窗）
   const [postponeTarget, setPostponeTarget] = useState<SubtaskWithTask | null>(null);
+  // 轻量 Toast 提示（失败提示 / 撤销等）
+  const [toast, setToast] = useState<{ msg: string; actionLabel?: string; onAction?: () => void } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((msg: string, actionLabel?: string, onAction?: () => void) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, actionLabel, onAction });
+    toastTimer.current = setTimeout(() => setToast(null), 5000);
+  }, []);
 
   const {
     entries, focusedId, setFocusedId,
@@ -95,8 +104,18 @@ export function HomePage() {
     const next = !current;
     setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: next } : s));
     setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: next } : prev);
-    await toggleSubtask(taskId, subtaskId, next).catch(() => {});
-    // 完成时刷新 streak 统计
+
+    // 后端持久化：失败则回滚本地状态，避免“假完成”后刷新丢失
+    try {
+      await toggleSubtask(taskId, subtaskId, next);
+    } catch {
+      setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: current } : s));
+      setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: current } : prev);
+      showToast(next ? "标记完成失败，已撤回，请重试" : "取消完成失败，已撤回，请重试");
+      return;
+    }
+
+    // 仅在成功持久化后才计入 streak 与触发完成庆祝
     if (next) setStreakTick(t => t + 1);
     setSubtaskRows((prev) => {
       const rows = prev.filter((s) => s.taskId === taskId);
@@ -109,7 +128,7 @@ export function HomePage() {
       }
       return prev;
     });
-  }, []);
+  }, [showToast]);
 
   // 确认延迟：startDay += 1，乐观更新本地 + 调后端重排
   const confirmPostpone = useCallback(async (row: SubtaskWithTask) => {
@@ -349,6 +368,26 @@ export function HomePage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* 轻量 Toast：失败提示 / 撤销 */}
+      {toast && (
+        <div style={{
+          position: "fixed", left: "50%", bottom: 84, transform: "translateX(-50%)",
+          zIndex: 400, background: "rgba(17,17,17,0.92)", color: "#fff",
+          borderRadius: 12, padding: "11px 16px", fontSize: 13,
+          display: "flex", alignItems: "center", gap: 14,
+          boxShadow: "0 8px 30px rgba(17,17,17,0.25)", maxWidth: "min(440px, 92vw)",
+          animation: "logReveal 0.25s ease both",
+        }}>
+          <span style={{ lineHeight: 1.4 }}>{toast.msg}</span>
+          {toast.actionLabel && toast.onAction && (
+            <button
+              onClick={() => { toast.onAction?.(); setToast(null); }}
+              style={{ background: "transparent", color: "#7FB0FF", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, flexShrink: 0, padding: 0 }}
+            >{toast.actionLabel}</button>
+          )}
+        </div>
       )}
     </div>
   );
