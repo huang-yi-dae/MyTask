@@ -193,14 +193,14 @@ export async function toggleSubtask(
  * 将单个子任务往后延迟一天：startDay += 1。
  * 用于用户觉得当天排不下、想顺延的场景。返回更新后的 startDay。
  */
-export async function postponeSubtask(id: string): Promise<number> {
+export async function postponeSubtask(id: string, delta = 1): Promise<number> {
   const rows = await db
     .select({ startDay: subtasks.startDay })
     .from(subtasks)
     .where(eq(subtasks.id, id))
     .limit(1);
   const current = rows[0]?.startDay ?? 0;
-  const next = current + 1;
+  const next = Math.max(0, current + delta);
   await db.update(subtasks)
     .set({ startDay: next })
     .where(eq(subtasks.id, id));
