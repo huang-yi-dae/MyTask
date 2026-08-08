@@ -56,6 +56,8 @@ export function HomePage() {
   const [detailSubtask, setDetailSubtask] = useState<SubtaskWithTask | null>(null);
   const [congrats, setCongrats] = useState<CongratsData | null>(null);
   const [highlightedSubtaskId, setHighlightedSubtaskId] = useState<string | null>(null);
+  // 键盘导航当前选中的单个子任务（Space/↑↓ 的作用目标）
+  const [activeSubtaskId, setActiveSubtaskId] = useState<string | null>(null);
   const [streakTick, setStreakTick] = useState(0);
   // 待确认延迟的子任务（打开确认弹窗）
   const [postponeTarget, setPostponeTarget] = useState<SubtaskWithTask | null>(null);
@@ -182,6 +184,8 @@ export function HomePage() {
 
   // 时间轴分组
   const sections = buildTimelineSections(subtaskRows);
+  // 扁平化的可见顺序（供 ↑↓ 键盘导航）
+  const flatRows = sections.flatMap(s => s.rows);
   const totalPending = subtaskRows.filter(r => !r.completed).length;
   const todayStr = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 
@@ -204,22 +208,48 @@ export function HomePage() {
           setDetailSubtask(null);
         } else if (showInput) {
           setShowInput(false);
+        } else if (activeSubtaskId) {
+          setActiveSubtaskId(null);
         } else if (focusedId) {
           setFocusedId(null);
         }
+      } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !showInput && !detailSubtask && !congrats) {
+        // ↑↓ → 在可见卡片间移动「当前选中」
+        if (flatRows.length === 0) return;
+        e.preventDefault();
+        const idx = flatRows.findIndex(r => r.id === activeSubtaskId);
+        let next: number;
+        if (idx === -1) {
+          next = e.key === "ArrowDown" ? 0 : flatRows.length - 1;
+        } else {
+          next = e.key === "ArrowDown"
+            ? Math.min(flatRows.length - 1, idx + 1)
+            : Math.max(0, idx - 1);
+        }
+        const target = flatRows[next];
+        if (target) {
+          setActiveSubtaskId(target.id);
+          setFocusedId(target.taskId);
+          setTimeout(() => {
+            document.getElementById(`subtask-card-${target.id}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }, 0);
+        }
       } else if (e.key === " ") {
-        // Space → toggle 当前聚焦子任务中第一个未完成的
-        if (!focusedId) return;
-        const first = subtaskRows.find(s => s.taskId === focusedId && !s.completed);
-        if (first) {
+        // Space → toggle 当前选中的子任务（无选中则退回到聚焦大任务的第一个未完成项）
+        let target = activeSubtaskId ? subtaskRows.find(s => s.id === activeSubtaskId) : undefined;
+        if (!target && focusedId) {
+          target = subtaskRows.find(s => s.taskId === focusedId && !s.completed);
+        }
+        if (target) {
           e.preventDefault();
-          handleToggleSubtask(first.taskId, first.id, first.completed);
+          handleToggleSubtask(target.taskId, target.id, target.completed);
         }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showInput, detailSubtask, congrats, focusedId, subtaskRows, handleToggleSubtask, setFocusedId]);
+  }, [showInput, detailSubtask, congrats, focusedId, activeSubtaskId, flatRows, subtaskRows, handleToggleSubtask, setFocusedId]);
 
   return (
     <div style={{ background: T.bg, height: "100%", display: "flex", flexDirection: "column", fontFamily: "var(--font-geist), Geist, system-ui, sans-serif" }}>
@@ -325,9 +355,10 @@ export function HomePage() {
                         <TimelineCard
                           row={row}
                           isSelected={focusedId === row.taskId}
+                          isActive={activeSubtaskId === row.id}
                           isHighlighted={highlightedSubtaskId === row.id}
                           onOpen={() => setDetailSubtask(row)}
-                          onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
+                          onSelect={() => { setActiveSubtaskId(row.id); setFocusedId(row.taskId); focusTask(row.taskId); }}
                           onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
                           onSkip={(e) => { e.stopPropagation(); handleSkip(row); }}
                           onPostpone={(e) => { e.stopPropagation(); setPostponeTarget(row); }}
@@ -349,7 +380,8 @@ export function HomePage() {
         <span style={{ color: T.muted, fontSize: 12 }}>今天：{todayStr}</span>
         <span style={{ color: T.muted, fontSize: 11, display: "flex", gap: 12 }}>
           <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>N</kbd> 新建</span>
-          <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>Space</kbd> 完成</span>
+          <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>↑↓</kbd> 选择</span>
+          <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>Space</kbd> 完成选中</span>
           <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>Esc</kbd> 关闭</span>
         </span>
       </footer>
