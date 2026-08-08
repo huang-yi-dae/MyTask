@@ -284,7 +284,7 @@ export function HomePage() {
           {user && <StreakBar refreshTick={streakTick} />}
 
           {/* 内容区 */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
+          <div className="canvas-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
             {authLoading || fetching ? (
               <div style={{ color: T.muted, fontSize: 13, padding: "40px 10px", textAlign: "center" }}>加载中…</div>
             ) : !user ? (
@@ -376,7 +376,7 @@ export function HomePage() {
           onToggleSubtask={handleToggleSubtask} onJumpToSubtask={handleJumpToSubtask} />
       </div>
 
-      <footer style={{ background: T.surface, borderTop: `1px solid ${T.line}`, padding: "7px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <footer className="kbd-footer" style={{ background: T.surface, borderTop: `1px solid ${T.line}`, padding: "7px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ color: T.muted, fontSize: 12 }}>今天：{todayStr}</span>
         <span style={{ color: T.muted, fontSize: 11, display: "flex", gap: 12 }}>
           <span><kbd style={{ background: T.soft, border: `1px solid ${T.line}`, borderRadius: 4, padding: "1px 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 10 }}>N</kbd> 新建</span>
