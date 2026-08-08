@@ -17,9 +17,10 @@ export async function PATCH(
 
   const body = await request.json();
 
-  // 延迟一天：startDay += 1
-  if (body.action === "postpone") {
-    const startDay = await postponeSubtask(subtaskId);
+  // 调整排期：postpone 延后一天 / unpostpone 撤销延后
+  if (body.action === "postpone" || body.action === "unpostpone") {
+    const delta = body.action === "unpostpone" ? -1 : 1;
+    const startDay = await postponeSubtask(subtaskId, delta);
     return NextResponse.json({ ok: true, startDay });
   }
 
