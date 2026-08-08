@@ -6,7 +6,7 @@ import { useEazo } from "@eazo/sdk/react";
 import { auth } from "@eazo/sdk";
 import {
   getSubtasksWithTask, getTasksWithSubtasks,
-  toggleSubtask, updateTaskStatusApi,
+  toggleSubtask, updateTaskStatusApi, postponeSubtask,
 } from "@/lib/api/tasks";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
 import { StreakBar } from "./streak-bar";
@@ -57,6 +57,8 @@ export function HomePage() {
   const [congrats, setCongrats] = useState<CongratsData | null>(null);
   const [highlightedSubtaskId, setHighlightedSubtaskId] = useState<string | null>(null);
   const [streakTick, setStreakTick] = useState(0);
+  // 待确认延迟的子任务（打开确认弹窗）
+  const [postponeTarget, setPostponeTarget] = useState<SubtaskWithTask | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
@@ -107,6 +109,20 @@ export function HomePage() {
       }
       return prev;
     });
+  }, []);
+
+  // 确认延迟：startDay += 1，乐观更新本地 + 调后端重排
+  const confirmPostpone = useCallback(async (row: SubtaskWithTask) => {
+    setPostponeTarget(null);
+    // 乐观更新：本地 startDay+1，卡片会随之重新分组到次日
+    setSubtaskRows((prev) => prev.map((s) =>
+      s.id === row.id ? { ...s, startDay: s.startDay + 1 } : s));
+    const newStartDay = await postponeSubtask(row.taskId, row.id).catch(() => null);
+    if (newStartDay === null) {
+      // 失败回滚
+      setSubtaskRows((prev) => prev.map((s) =>
+        s.id === row.id ? { ...s, startDay: s.startDay - 1 } : s));
+    }
   }, []);
 
   const handleJumpToSubtask = useCallback((
@@ -273,6 +289,7 @@ export function HomePage() {
                           onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
                           onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
                           onSkip={(e) => { e.stopPropagation(); if (!row.completed) handleToggleSubtask(row.taskId, row.id, row.completed); }}
+                          onPostpone={(e) => { e.stopPropagation(); setPostponeTarget(row); }}
                         />
                       </div>
                     ))}
@@ -299,6 +316,40 @@ export function HomePage() {
       {showInput && <NewTaskInput onClose={() => setShowInput(false)} onSubmit={(goal) => startAnalysis(goal)} />}
       {detailSubtask && <SubtaskDetailModal row={detailSubtask} onClose={() => setDetailSubtask(null)} onToggle={() => handleToggleSubtask(detailSubtask.taskId, detailSubtask.id, detailSubtask.completed)} onOpenTask={() => { router.push(`/task/${detailSubtask.taskId}`); setDetailSubtask(null); }} />}
       {congrats && <CongratulationsModal data={congrats} onClose={() => setCongrats(null)} onLearnMore={(taskId) => { setFocusedId(taskId); focusTask(taskId); setCongrats(null); }} />}
+
+      {/* 延迟确认弹窗 */}
+      {postponeTarget && (
+        <>
+          <div onClick={() => setPostponeTarget(null)} style={{ position: "fixed", inset: 0, background: "rgba(17,17,17,0.25)", zIndex: 300, backdropFilter: "blur(2px)" }} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16,
+            padding: "22px 22px 18px", width: "min(360px, 90vw)", zIndex: 301,
+            boxShadow: "0 20px 60px rgba(17,17,17,0.12)", display: "flex", flexDirection: "column", gap: 14,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 26 }}>⏭</span>
+              <div>
+                <div style={{ color: T.ink, fontWeight: 700, fontSize: 15, letterSpacing: "-0.02em" }}>延迟一天</div>
+                <div style={{ color: T.muted, fontSize: 12, marginTop: 2 }}>排期将顺延，其它任务不受影响</div>
+              </div>
+            </div>
+            <div style={{ background: T.soft, borderRadius: 10, padding: "10px 12px", color: T.ink, fontSize: 13, lineHeight: 1.5 }}>
+              确定把「<span style={{ fontWeight: 600 }}>{postponeTarget.title}</span>」往后延迟一天吗？
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => confirmPostpone(postponeTarget)}
+                style={{ flex: 1, background: T.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+              >确定延迟</button>
+              <button
+                onClick={() => setPostponeTarget(null)}
+                style={{ background: T.soft, color: T.muted, border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer" }}
+              >取消</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

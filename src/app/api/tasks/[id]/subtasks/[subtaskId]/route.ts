@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { getTaskById, toggleSubtask } from "@/lib/db/queries";
+import { getTaskById, toggleSubtask, postponeSubtask } from "@/lib/db/queries";
 
 export async function PATCH(
   request: NextRequest,
@@ -16,6 +16,13 @@ export async function PATCH(
   }
 
   const body = await request.json();
+
+  // 延迟一天：startDay += 1
+  if (body.action === "postpone") {
+    const startDay = await postponeSubtask(subtaskId);
+    return NextResponse.json({ ok: true, startDay });
+  }
+
   const completed = Boolean(body.completed);
   await toggleSubtask(subtaskId, completed);
   return NextResponse.json({ ok: true });
