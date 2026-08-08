@@ -75,7 +75,7 @@ export function HomePage() {
   const {
     entries, focusedId, setFocusedId,
     startAnalysis, regenAnalysis, removeEntry,
-    hydrateFromDB, focusTask,
+    hydrateFromDB, focusTask, patchSubtaskCompleted,
   } = useAnalysisPanel();
 
   const loadSubtasks = useCallback(async () => {
@@ -106,6 +106,7 @@ export function HomePage() {
     const next = !current;
     setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: next } : s));
     setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: next } : prev);
+    patchSubtaskCompleted(taskId, subtaskId, next);  // 同步右侧 AI 面板
 
     // 后端持久化：失败则回滚本地状态，避免“假完成”后刷新丢失
     try {
@@ -113,6 +114,7 @@ export function HomePage() {
     } catch {
       setSubtaskRows((prev) => prev.map((s) => s.id === subtaskId ? { ...s, completed: current } : s));
       setDetailSubtask((prev) => prev?.id === subtaskId ? { ...prev, completed: current } : prev);
+      patchSubtaskCompleted(taskId, subtaskId, current);  // 回滚右侧 AI 面板
       showToast(next ? "标记完成失败，已撤回，请重试" : "取消完成失败，已撤回，请重试");
       return;
     }
@@ -130,7 +132,7 @@ export function HomePage() {
       }
       return prev;
     });
-  }, [showToast]);
+  }, [showToast, patchSubtaskCompleted]);
 
   // 确认延迟：startDay += 1，乐观更新本地 + 调后端重排；成功后给「已延迟 · 撤销」Toast
   const confirmPostpone = useCallback(async (row: SubtaskWithTask) => {

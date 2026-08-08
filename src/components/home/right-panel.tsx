@@ -179,7 +179,22 @@ export function useAnalysisPanel() {
     setFocusedId(taskId);
   }, []);
 
-  return { entries, focusedId, setFocusedId, startAnalysis, regenAnalysis, removeEntry, hydrateFromDB, focusTask };
+  /** 同步单个子任务的完成态到右侧面板的 entries（保持三处状态一致） */
+  const patchSubtaskCompleted = useCallback((taskId: string, subtaskId: string, completed: boolean) => {
+    setEntries((prev) => prev.map((e) => {
+      if (e.taskId !== taskId || !e.task) return e;
+      return {
+        ...e,
+        task: {
+          ...e.task,
+          subtasks: e.task.subtasks.map((s) =>
+            s.id === subtaskId ? { ...s, completed } : s),
+        },
+      };
+    }));
+  }, []);
+
+  return { entries, focusedId, setFocusedId, startAnalysis, regenAnalysis, removeEntry, hydrateFromDB, focusTask, patchSubtaskCompleted };
 }
 
 // ─── Pipeline Steps Display ───────────────────────────────────────────
