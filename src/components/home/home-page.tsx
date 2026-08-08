@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/tasks";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
 import { StreakBar } from "./streak-bar";
+import { AchievementPanel } from "./achievement-panel";
 import { RightPanel, useAnalysisPanel } from "./right-panel";
 import { NewTaskInput } from "./new-task-input";
 import { getSubtaskActualDates } from "./subtask-row";
@@ -288,6 +289,9 @@ export function HomePage() {
 
           {/* 连续学习统计条 */}
           {user && <StreakBar refreshTick={streakTick} />}
+
+          {/* 方向A：累计成就面板（有任务时展示） */}
+          {user && !fetching && subtaskRows.length > 0 && <AchievementPanel refreshTick={streakTick} />}
 
           {/* 内容区 */}
           <div className="canvas-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
