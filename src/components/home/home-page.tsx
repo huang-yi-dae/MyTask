@@ -18,7 +18,8 @@ import { TimelineCard, TimelineSectionHeader } from "./timeline-card";
 import { SubtaskDetailModal } from "./subtask-detail-modal";
 import { CongratulationsModal, type CongratsData } from "./congrats-modal";
 import { request } from "@/lib/api/request";
-import { encourageMessage } from "@/lib/growth";
+import { encourageMessage, crossedMilestone, type Level } from "@/lib/growth";
+import { MilestoneUnlockModal } from "./milestone-unlock-modal";
 
 // ─── Design Tokens ────────────────────────────────────────────────────
 const T = {
@@ -66,6 +67,9 @@ export function HomePage() {
   const [postponeTarget, setPostponeTarget] = useState<SubtaskWithTask | null>(null);
   // 轻量 Toast 提示（失败提示 / 撤销等）
   const [toast, setToast] = useState<{ msg: string; actionLabel?: string; onAction?: () => void } | null>(null);
+  // 方向B：里程碑解锁弹窗
+  const [milestone, setMilestone] = useState<Level | null>(null);
+  const prevTotalRef = useRef<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -139,13 +143,22 @@ export function HomePage() {
       return prev;
     });
 
-    // 方向D：即时微激励 —— 每完成一项就给正向反馈（整任务完成时交给庆祝弹窗，跳过操作不弹）
+    // 方向D+B：即时微激励 & 里程碑解锁 —— 每完成一项就给反馈（整任务完成时交给庆祝弹窗，跳过操作不弹）
     if (next && !silent && !allDone) {
       try {
         const res = await request("/api/user/stats");
         if (res.ok) {
           const s = await res.json() as { todayCount: number; totalCompleted: number };
-          showToast(encourageMessage(s.todayCount, s.totalCompleted));
+          const after = s.totalCompleted;
+          const before = after - 1;  // 本次刚完成 1 个
+          prevTotalRef.current = after;
+          const crossed = crossedMilestone(before, after);
+          if (crossed) {
+            // 跨过里程碑：弹解锁弹窗（比普通 Toast 更隆重）
+            setMilestone(crossed);
+          } else {
+            showToast(encourageMessage(s.todayCount, after));
+          }
         }
       } catch { /* 静默失败，不打扰用户 */ }
     }
@@ -415,6 +428,9 @@ export function HomePage() {
       {showInput && <NewTaskInput onClose={() => setShowInput(false)} onSubmit={(goal) => startAnalysis(goal)} />}
       {detailSubtask && <SubtaskDetailModal row={detailSubtask} onClose={() => setDetailSubtask(null)} onToggle={() => handleToggleSubtask(detailSubtask.taskId, detailSubtask.id, detailSubtask.completed)} onOpenTask={() => { router.push(`/task/${detailSubtask.taskId}`); setDetailSubtask(null); }} />}
       {congrats && <CongratulationsModal data={congrats} onClose={() => setCongrats(null)} onLearnMore={(taskId) => { setFocusedId(taskId); focusTask(taskId); setCongrats(null); }} />}
+
+      {/* 方向B：里程碑等级解锁弹窗 */}
+      {milestone && <MilestoneUnlockModal level={milestone} onClose={() => setMilestone(null)} />}
 
       {/* 延迟确认弹窗 */}
       {postponeTarget && (
