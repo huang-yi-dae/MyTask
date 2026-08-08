@@ -129,8 +129,13 @@ export function TimelineCard({
       onMouseLeave={() => setHovered(false)}
       style={{
         background: isHighlighted ? T.highlight : row.completed ? "#FAFAF9" : T.surface,
-        border: `1px solid ${isHighlighted ? "#F59E0B" : isActive ? taskColor : isSelected ? taskColor : T.line}`,
-        borderLeft: isActive ? `4px solid ${taskColor}` : undefined,
+        // 用非简写的分边属性，避免与 borderLeft 混用（React 会警告简写/非简写冲突）
+        borderStyle: "solid",
+        borderColor: isHighlighted ? "#F59E0B" : isActive ? taskColor : isSelected ? taskColor : T.line,
+        borderTopWidth: 1,
+        borderRightWidth: 1,
+        borderBottomWidth: 1,
+        borderLeftWidth: isActive ? 4 : 1,
         borderRadius: 12,
         overflow: "hidden",
         opacity: row.completed ? 0.62 : 1,
