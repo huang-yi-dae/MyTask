@@ -260,13 +260,36 @@ export interface RightPanelProps {
 
 export function RightPanel({ entries, focusedId, setFocusedId, regenAnalysis, removeEntry, onToggleSubtask, onJumpToSubtask }: RightPanelProps) {
   const focused = entries.find((e) => e.taskId === focusedId) ?? entries[0] ?? null;
+  const [collapsed, setCollapsed] = useState(false);
+
+  // 有正在运行的 entry 时自动展开
+  const hasActive = entries.some(e => e.stream.phase !== "idle" && e.stream.phase !== "done" && e.stream.phase !== "error");
+  useEffect(() => { if (hasActive) setCollapsed(false); }, [hasActive]);
+
   return (
-    <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: T.surface, borderLeft: `1px solid ${T.line}` }}>
-      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
-        <div style={{ color: T.ink, fontWeight: 600, fontSize: 14, letterSpacing: "-0.02em" }}>AI 分析面板</div>
-        <div style={{ color: T.muted, fontSize: 11, marginTop: 2 }}>意图→资源→计划→核查 · 全局排期</div>
+    <div style={{ width: collapsed ? 36 : 340, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: T.surface, borderLeft: `1px solid ${T.line}`, transition: "width 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
+      {/* 面板标题栏 + 折叠按钮 */}
+      <div style={{ padding: "12px 8px 12px 16px", borderBottom: `1px solid ${T.line}`, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+        {!collapsed && <>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: T.ink, fontWeight: 600, fontSize: 14, letterSpacing: "-0.02em" }}>AI 分析面板</div>
+            <div style={{ color: T.muted, fontSize: 11, marginTop: 2 }}>意图→资源→计划→核查 · 全局排期</div>
+          </div>
+        </>}
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? "展开面板" : "收起面板"}
+          style={{
+            width: 24, height: 24, borderRadius: 6, border: "none",
+            background: T.soft, color: T.muted, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, transition: "all 0.15s", flexShrink: 0,
+          }}
+        >
+          {collapsed ? "❯" : "❮"}
+        </button>
       </div>
-      {entries.length > 1 && (
+      {!collapsed && entries.length > 1 && (
         <div style={{ display: "flex", gap: 4, padding: "8px 12px", overflowX: "auto", borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
           {entries.map((e) => {
             const running = !["idle","done","error"].includes(e.stream.phase);
@@ -279,9 +302,11 @@ export function RightPanel({ entries, focusedId, setFocusedId, regenAnalysis, re
           })}
         </div>
       )}
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px" }}>
-        {!focused ? <EmptyState /> : <EntryDetail entry={focused} onRegen={regenAnalysis} onRemove={removeEntry} onToggleSubtask={onToggleSubtask} onJumpToSubtask={onJumpToSubtask} />}
-      </div>
+      {!collapsed && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px" }}>
+          {!focused ? <EmptyState /> : <EntryDetail entry={focused} onRegen={regenAnalysis} onRemove={removeEntry} onToggleSubtask={onToggleSubtask} onJumpToSubtask={onJumpToSubtask} />}
+        </div>
+      )}
     </div>
   );
 }
