@@ -349,11 +349,10 @@ function buildTimelineSections(rows: SubtaskWithTask[]): TimelineSection[] {
     }
   }
 
+  // 始终按 sortOrder 保持原始排列位置：
+  // 完成子任务后不再把它挪到组末尾，避免用户误点相邻项
   const sort = (arr: SubtaskWithTask[]) =>
-    [...arr].sort((a, b) => {
-      if (a.completed !== b.completed) return a.completed ? 1 : -1;
-      return a.sortOrder - b.sortOrder;
-    });
+    [...arr].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return [
     {
