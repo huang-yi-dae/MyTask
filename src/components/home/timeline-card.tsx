@@ -13,7 +13,7 @@
  * 徽章行（Bloom、日期）默认收起，hover 才渐显
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
 export { getSubtaskDateRange, getSubtaskActualDates } from "./subtask-row";
 
@@ -92,6 +92,16 @@ export function TimelineCard({
 }: CardProps) {
   const taskColor = getTaskColor(row.taskId, row.topic);
   const [hovered, setHovered] = useState(false);
+  const [animKey, setAnimKey] = useState(0);
+  const prevCompleted = useRef(row.completed);
+
+  useEffect(() => {
+    // 只在 false → true 时触发弹跳动画
+    if (!prevCompleted.current && row.completed) {
+      setAnimKey(k => k + 1);
+    }
+    prevCompleted.current = row.completed;
+  }, [row.completed]);
 
   // bloom_level 和 deepWorkHours 不在 DB schema 里，用可用字段估算
   // urgency 1=极紧急(高bloom)→5=不紧急(低bloom)，倒转映射 bloom 1-5
@@ -139,8 +149,10 @@ export function TimelineCard({
 
           {/* 完成圆圈 */}
           <button
+            key={`circle-${animKey}`}
             onClick={(e) => { e.stopPropagation(); onToggle(e); }}
             title={row.completed ? "取消完成" : "标记已完成"}
+            className={row.completed && animKey > 0 ? "check-bounce" : ""}
             style={{
               width: 19, height: 19, borderRadius: "50%", flexShrink: 0, marginTop: 2,
               border: `2px solid ${row.completed ? taskColor : T.line}`,
