@@ -80,6 +80,8 @@ interface CardProps {
   row: SubtaskWithTask;
   isSelected: boolean;
   isHighlighted: boolean;
+  /** 键盘导航当前选中的单个子任务：Space 将作用于它 */
+  isActive?: boolean;
   onOpen: () => void;
   onSelect: () => void;
   onToggle: (e: React.MouseEvent) => void;
@@ -90,7 +92,7 @@ interface CardProps {
 }
 
 export function TimelineCard({
-  row, isSelected, isHighlighted,
+  row, isSelected, isHighlighted, isActive = false,
   onOpen, onSelect, onToggle, onSkip, onPostpone,
 }: CardProps) {
   const taskColor = getTaskColor(row.taskId, row.topic);
@@ -127,15 +129,32 @@ export function TimelineCard({
       onMouseLeave={() => setHovered(false)}
       style={{
         background: isHighlighted ? T.highlight : row.completed ? "#FAFAF9" : T.surface,
-        border: `1px solid ${isHighlighted ? "#F59E0B" : isSelected ? taskColor : T.line}`,
+        border: `1px solid ${isHighlighted ? "#F59E0B" : isActive ? taskColor : isSelected ? taskColor : T.line}`,
+        borderLeft: isActive ? `4px solid ${taskColor}` : undefined,
         borderRadius: 12,
         overflow: "hidden",
         opacity: row.completed ? 0.62 : 1,
-        boxShadow: isSelected ? `0 0 0 2px ${taskColor}30` : "0 1px 4px rgba(17,17,17,0.04)",
+        boxShadow: isActive
+          ? `0 0 0 3px ${taskColor}33, 0 4px 14px ${taskColor}22`
+          : isSelected ? `0 0 0 2px ${taskColor}30` : "0 1px 4px rgba(17,17,17,0.04)",
         cursor: "pointer",
         transition: "all 0.18s",
       }}
     >
+      {/* ── 键盘选中提示条 ── */}
+      {isActive && !row.completed && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 5,
+          background: `${taskColor}10`,
+          borderBottom: `1px solid ${taskColor}20`,
+          padding: "3px 12px", fontSize: 10, color: taskColor, fontWeight: 600,
+        }}>
+          <kbd style={{ background: "#fff", border: `1px solid ${taskColor}40`, borderRadius: 4, padding: "0 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 9, color: taskColor }}>Space</kbd>
+          <span>完成此项 · </span>
+          <kbd style={{ background: "#fff", border: `1px solid ${taskColor}40`, borderRadius: 4, padding: "0 5px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 9, color: taskColor }}>↑↓</kbd>
+          <span>切换</span>
+        </div>
+      )}
       {/* ── 顶部时长色条 ── */}
       <div style={{ height: 3, background: T.soft }}>
         <div style={{
