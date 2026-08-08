@@ -296,7 +296,23 @@ function buildTimelineSections(rows: SubtaskWithTask[]): TimelineSection[] {
     {
       key: "later",
       label: "更晚",
-      sublabel: "7 天之后",
+      sublabel: (() => {
+        const laterRows = sort(buckets.later);
+        if (laterRows.length === 0) return "7 天之后";
+        // 从所有 later 行里找最早和最晚的实际日期
+        let minDate: Date | null = null;
+        let maxDate: Date | null = null;
+        for (const r of laterRows) {
+          const d = getSubtaskActualDates(r);
+          if (!d) continue;
+          if (!minDate || d.start < minDate) minDate = d.start;
+          if (!maxDate || d.end > maxDate) maxDate = d.end;
+        }
+        if (!minDate || !maxDate) return "7 天之后";
+        const diffDays = Math.round((minDate.getTime() - today.getTime()) / 86400000);
+        const dayHint = diffDays > 0 ? `（${diffDays} 天后开始）` : "";
+        return `${fmtRange(minDate, maxDate)}${dayHint}`;
+      })(),
       accentColor: "#94a3b8",
       rows: sort(buckets.later),
     },
