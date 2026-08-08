@@ -177,8 +177,52 @@ export function HomePage() {
                 <button onClick={() => auth.login().catch(() => {})} style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 13, cursor: "pointer" }}>登录</button>
               </div>
             ) : sections.every(s => s.rows.length === 0) ? (
-              <div style={{ color: T.muted, fontSize: 13, padding: "60px 10px", textAlign: "center" }}>
-                暂无任务，点击右上角「新建任务」开始。
+              <div style={{ padding: "48px 16px 40px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+                {/* 图示 */}
+                <div style={{ fontSize: 52, lineHeight: 1 }}>📚</div>
+                <div>
+                  <div style={{ color: T.ink, fontWeight: 700, fontSize: 16, marginBottom: 6, letterSpacing: "-0.03em" }}>还没有学习任务</div>
+                  <div style={{ color: T.muted, fontSize: 13 }}>选一个方向，AI 帮你拆解成可执行的子任务</div>
+                </div>
+                {/* 示例按钮 */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 260 }}>
+                  {[
+                    { icon: "🐍", label: "从零掌握 Python 基础", value: "从零开始掌握 Python 基础，能写简单脚本" },
+                    { icon: "⚛️", label: "React Hooks 实战",    value: "掌握 React Hooks，能独立开发 Todo 应用" },
+                    { icon: "📐", label: "高考数学冲刺",          value: "高考数学冲刺，重点突破导数与概率" },
+                  ].map((ex) => (
+                    <button
+                      key={ex.label}
+                      onClick={() => { if (!user) { auth.login().catch(() => {}); return; } startAnalysis(ex.value); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: T.surface, border: `1.5px solid ${T.line}`,
+                        borderRadius: 10, padding: "10px 14px",
+                        fontSize: 13, color: T.ink, fontWeight: 500,
+                        cursor: "pointer", textAlign: "left",
+                        transition: "all 0.15s",
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = T.accent;
+                        (e.currentTarget as HTMLButtonElement).style.background = "rgba(59,122,255,0.04)";
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = T.line;
+                        (e.currentTarget as HTMLButtonElement).style.background = T.surface;
+                      }}
+                    >
+                      <span style={{ fontSize: 18 }}>{ex.icon}</span>
+                      <span style={{ flex: 1 }}>{ex.label}</span>
+                      <span style={{ color: T.muted, fontSize: 12 }}>→</span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => { if (!user) { auth.login().catch(() => {}); return; } setShowInput(true); }}
+                    style={{ border: `1px dashed ${T.line}`, borderRadius: 10, padding: "9px 14px", fontSize: 13, color: T.muted, cursor: "pointer", background: "transparent" }}
+                  >
+                    + 自定义目标…
+                  </button>
+                </div>
               </div>
             ) : (
               sections.filter(s => s.rows.length > 0).map((section) => (
