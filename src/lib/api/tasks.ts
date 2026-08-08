@@ -97,3 +97,18 @@ export async function postponeSubtask(
   const data = await res.json().catch(() => ({}));
   return typeof data.startDay === "number" ? data.startDay : 0;
 }
+
+/** 撤销延迟（startDay -= 1），返回更新后的 startDay */
+export async function unpostponeSubtask(
+  taskId: string,
+  subtaskId: string
+): Promise<number> {
+  const res = await request(`/api/tasks/${taskId}/subtasks/${subtaskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "unpostpone" }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json().catch(() => ({}));
+  return typeof data.startDay === "number" ? data.startDay : 0;
+}
