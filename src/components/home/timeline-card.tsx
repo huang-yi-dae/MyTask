@@ -82,7 +82,6 @@ interface CardProps {
   isHighlighted: boolean;
   onOpen: () => void;
   onSelect: () => void;
-  onDeleteTask: (taskId: string, e: React.MouseEvent) => void;
   onToggle: (e: React.MouseEvent) => void;
   /** 跳过：将单个子任务标记为已完成/略过（无需真正执行） */
   onSkip: (e: React.MouseEvent) => void;
@@ -90,7 +89,7 @@ interface CardProps {
 
 export function TimelineCard({
   row, isSelected, isHighlighted,
-  onOpen, onSelect, onDeleteTask, onToggle, onSkip,
+  onOpen, onSelect, onToggle, onSkip,
 }: CardProps) {
   const taskColor = getTaskColor(row.taskId, row.topic);
   const [hovered, setHovered] = useState(false);
@@ -222,7 +221,7 @@ export function TimelineCard({
             </div>
           </div>
 
-          {/* 右侧：时长 + 删除 */}
+          {/* 右侧：时长 + 操作 */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: taskColor, letterSpacing: "-0.02em", lineHeight: 1 }}>
@@ -247,17 +246,6 @@ export function TimelineCard({
                   onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = T.muted; (e.currentTarget as HTMLButtonElement).style.opacity = hovered ? "0.75" : "0.35"; }}
                 >⤼</button>
               )}
-              <button
-                onClick={(e) => { e.stopPropagation(); onDeleteTask(row.taskId, e); }}
-                title="删除整个大任务（含全部子任务）"
-                style={{
-                  width: 22, height: 22, borderRadius: 5, border: "none",
-                  background: "transparent", color: T.muted, fontSize: 15,
-                  cursor: "pointer", opacity: 0.35,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "opacity 0.15s",
-                }}
-              >×</button>
             </div>
           </div>
         </div>
