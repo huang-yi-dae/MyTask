@@ -6,7 +6,7 @@ import { useEazo } from "@eazo/sdk/react";
 import { auth } from "@eazo/sdk";
 import {
   getSubtasksWithTask, getTasksWithSubtasks,
-  toggleSubtask, updateTaskStatusApi, postponeSubtask,
+  toggleSubtask, updateTaskStatusApi, postponeSubtask, unpostponeSubtask,
 } from "@/lib/api/tasks";
 import type { SubtaskWithTask } from "@/lib/api/tasks";
 import { StreakBar } from "./streak-bar";
@@ -130,7 +130,7 @@ export function HomePage() {
     });
   }, [showToast]);
 
-  // 确认延迟：startDay += 1，乐观更新本地 + 调后端重排
+  // 确认延迟：startDay += 1，乐观更新本地 + 调后端重排；成功后给「已延迟 · 撤销」Toast
   const confirmPostpone = useCallback(async (row: SubtaskWithTask) => {
     setPostponeTarget(null);
     // 乐观更新：本地 startDay+1，卡片会随之重新分组到次日
@@ -141,8 +141,30 @@ export function HomePage() {
       // 失败回滚
       setSubtaskRows((prev) => prev.map((s) =>
         s.id === row.id ? { ...s, startDay: s.startDay - 1 } : s));
+      showToast("延迟失败，请重试");
+      return;
     }
-  }, []);
+    // 成功：提示去向（避免任务“悄悄挪走”找不到）+ 撤销入口
+    showToast(`已延迟到明天，「${row.title}」移到次日`, "撤销", () => {
+      setSubtaskRows((prev) => prev.map((s) =>
+        s.id === row.id ? { ...s, startDay: Math.max(0, s.startDay - 1) } : s));
+      unpostponeSubtask(row.taskId, row.id).catch(() => {
+        // 撤销失败则回滚回延后态
+        setSubtaskRows((prev) => prev.map((s) =>
+          s.id === row.id ? { ...s, startDay: s.startDay + 1 } : s));
+        showToast("撤销失败，请重试");
+      });
+    });
+  }, [showToast]);
+
+  // 跳过：标记完成，并给「已跳过 · 撤销」Toast
+  const handleSkip = useCallback(async (row: SubtaskWithTask) => {
+    if (row.completed) return;
+    await handleToggleSubtask(row.taskId, row.id, false);
+    showToast(`已跳过「${row.title}」`, "撤销", () => {
+      handleToggleSubtask(row.taskId, row.id, true);
+    });
+  }, [handleToggleSubtask, showToast]);
 
   const handleJumpToSubtask = useCallback((
     subtaskId: string, _taskStartDate: string | null, _startDay: number, _durationDays: number,
@@ -307,7 +329,7 @@ export function HomePage() {
                           onOpen={() => setDetailSubtask(row)}
                           onSelect={() => { setFocusedId(row.taskId); focusTask(row.taskId); }}
                           onToggle={(e) => { e.stopPropagation(); handleToggleSubtask(row.taskId, row.id, row.completed); }}
-                          onSkip={(e) => { e.stopPropagation(); if (!row.completed) handleToggleSubtask(row.taskId, row.id, row.completed); }}
+                          onSkip={(e) => { e.stopPropagation(); handleSkip(row); }}
                           onPostpone={(e) => { e.stopPropagation(); setPostponeTarget(row); }}
                         />
                       </div>
