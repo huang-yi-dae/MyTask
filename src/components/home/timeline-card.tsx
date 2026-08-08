@@ -84,11 +84,13 @@ interface CardProps {
   onSelect: () => void;
   onDeleteTask: (taskId: string, e: React.MouseEvent) => void;
   onToggle: (e: React.MouseEvent) => void;
+  /** 跳过：将单个子任务标记为已完成/略过（无需真正执行） */
+  onSkip: (e: React.MouseEvent) => void;
 }
 
 export function TimelineCard({
   row, isSelected, isHighlighted,
-  onOpen, onSelect, onDeleteTask, onToggle,
+  onOpen, onSelect, onDeleteTask, onToggle, onSkip,
 }: CardProps) {
   const taskColor = getTaskColor(row.taskId, row.topic);
   const [hovered, setHovered] = useState(false);
@@ -228,17 +230,35 @@ export function TimelineCard({
               </div>
               <div style={{ fontSize: 9, color: T.muted, marginTop: 1 }}>{row.durationDays}天</div>
             </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDeleteTask(row.taskId, e); }}
-              title="删除大任务"
-              style={{
-                width: 22, height: 22, borderRadius: 5, border: "none",
-                background: "transparent", color: T.muted, fontSize: 15,
-                cursor: "pointer", opacity: 0.35,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "opacity 0.15s",
-              }}
-            >×</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              {/* 跳过：仅未完成时显示，标记单个子任务为已完成/略过 */}
+              {!row.completed && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onSkip(e); }}
+                  title="跳过此任务（标记为已完成，无需执行）"
+                  style={{
+                    width: 22, height: 22, borderRadius: 5, border: "none",
+                    background: "transparent", color: T.muted, fontSize: 14,
+                    cursor: "pointer", opacity: hovered ? 0.75 : 0.35,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "opacity 0.15s",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = taskColor; (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = T.muted; (e.currentTarget as HTMLButtonElement).style.opacity = hovered ? "0.75" : "0.35"; }}
+                >⤼</button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onDeleteTask(row.taskId, e); }}
+                title="删除整个大任务（含全部子任务）"
+                style={{
+                  width: 22, height: 22, borderRadius: 5, border: "none",
+                  background: "transparent", color: T.muted, fontSize: 15,
+                  cursor: "pointer", opacity: 0.35,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "opacity 0.15s",
+                }}
+              >×</button>
+            </div>
           </div>
         </div>
       </div>
