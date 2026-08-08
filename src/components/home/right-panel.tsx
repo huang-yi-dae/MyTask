@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { request } from "@/lib/api/request";
 import { AppAIClientUnavailableError } from "@/lib/api/app-ai-request";
 import { createTask, getTask } from "@/lib/api/tasks";
@@ -19,8 +19,21 @@ const T = {
 export type Resource = TrustableResource;
 
 type Phase = "idle"|"intent"|"search"|"plan"|"validate"|"revise"|"saving"|"done"|"error";
-interface StreamState { phase: Phase; label: string; deltaLen: number; errorMsg: string; }
+interface StreamState { phase: Phase; label: string; deltaLen: number; errorMsg: string; startedAt?: number; }
 const INIT_STREAM: StreamState = { phase: "idle", label: "", deltaLen: 0, errorMsg: "" };
+
+// 每个 phase 经验估算耗时（秒）
+const PHASE_ETA: Partial<Record<Phase, number>> = {
+  intent: 8, search: 12, plan: 18, validate: 10, revise: 15, saving: 3,
+};
+function getEtaLabel(phase: Phase, startedAt?: number): string | null {
+  if (!startedAt || phase === "done" || phase === "idle" || phase === "error") return null;
+  const elapsed = (Date.now() - startedAt) / 1000;
+  const eta = PHASE_ETA[phase];
+  if (!eta) return null;
+  const remaining = Math.max(1, Math.round(eta - elapsed));
+  return remaining <= 2 ? "即将完成…" : `约还需 ${remaining} 秒`;
+}
 
 const PIPELINE_STEPS: Array<{ key: Phase; label: string; icon: string }> = [
   { key: "intent",   label: "解析学习意图", icon: "🧠" },
@@ -52,7 +65,7 @@ export function useAnalysisPanel() {
     const patchStream = (s: Partial<StreamState>) =>
       setEntries((prev) => prev.map((e) => e.taskId === taskId ? { ...e, stream: { ...e.stream, ...s } } : e));
 
-    patchStream({ phase: "intent", label: "解析学习意图…", deltaLen: 0, errorMsg: "" });
+    patchStream({ phase: "intent", label: "解析学习意图…", deltaLen: 0, errorMsg: "", startedAt: Date.now() });
 
     try {
       const res = await request(`/api/tasks/${taskId}/analyze`, {
@@ -76,7 +89,7 @@ export function useAnalysisPanel() {
             const msg = JSON.parse(line.slice(6)) as { event: string; data: unknown };
             if (msg.event === "phase") {
               const d = msg.data as { step: string; label?: string };
-              patchStream({ phase: d.step as Phase, label: d.label || "" });
+              patchStream({ phase: d.step as Phase, label: d.label || "", startedAt: Date.now() });
             } else if (msg.event === "delta") {
               setEntries((prev) => prev.map((e) => e.taskId === taskId
                 ? { ...e, stream: { ...e.stream, deltaLen: e.stream.deltaLen + 1 } } : e));
@@ -159,8 +172,16 @@ export function useAnalysisPanel() {
 // ─── Pipeline Steps Display ───────────────────────────────────────────
 
 function PipelineSteps({ stream }: { stream: StreamState }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (stream.phase === "done" || stream.phase === "idle" || stream.phase === "error") return;
+    const t = setInterval(() => tick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [stream.phase]);
+
   const curIdx = PHASE_ORDER.indexOf(stream.phase);
   const isError = stream.phase === "error";
+  const etaLabel = getEtaLabel(stream.phase, stream.startedAt);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {PIPELINE_STEPS.map((step, i) => {
@@ -177,7 +198,12 @@ function PipelineSteps({ stream }: { stream: StreamState }) {
               <div style={{ color: isDone ? T.muted : isActive ? T.ink : T.muted, fontSize: 12, fontWeight: isActive ? 600 : 400 }}>{step.icon} {step.label}</div>
               {isActive && stream.label && <div style={{ color: T.accent, fontSize: 9, marginTop: 1, fontFamily: "var(--font-geist-mono), monospace" }}>{stream.label}</div>}
             </div>
-            {isActive && stream.deltaLen > 0 && <span style={{ color: T.muted, fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", flexShrink: 0 }}>{stream.deltaLen}t</span>}
+            {isActive && etaLabel && (
+              <span style={{ color: T.accent, fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", flexShrink: 0, opacity: 0.8, background: "rgba(59,122,255,0.08)", padding: "1px 5px", borderRadius: 4 }}>
+                {etaLabel}
+              </span>
+            )}
+            {isActive && !etaLabel && stream.deltaLen > 0 && <span style={{ color: T.muted, fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", flexShrink: 0 }}>{stream.deltaLen}t</span>}
           </div>
         );
       })}
